@@ -34,6 +34,7 @@ type Options struct {
 	TTSModel     string
 	ChatModel    string
 	Temperature  float64
+	WakeWord     string
 }
 
 func main() {
@@ -48,6 +49,7 @@ func main() {
 		TTSModel: "voice-en-us-amy-low",
 		//TTSModel:    "voice-de-kerstin-low",
 		Temperature: 0.7,
+		WakeWord:    "Computer",
 	}
 
 	flag.StringVar(&opts.ServerURL, "server-url", opts.ServerURL, "URL pointing to the OpenAI API server that runs the LLM")
@@ -60,6 +62,7 @@ func main() {
 	flag.StringVar(&opts.TTSModel, "tts-model", opts.TTSModel, "name of the TTS model to use")
 	flag.StringVar(&opts.ChatModel, "chat-model", opts.ChatModel, "name of the chat model to use")
 	flag.Float64Var(&opts.Temperature, "temperature", opts.Temperature, "temperature parameter for the chat LLM")
+	flag.StringVar(&opts.WakeWord, "wake-word", opts.WakeWord, "word used to address the assistent (needs to be recognized by whisper)")
 	flag.Parse()
 
 	portaudio.Initialize()
@@ -89,16 +92,15 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 	detector := &vad.Detector{
 		ModelPath: opts.VADModelPath,
 	}
-	wakeWord := "Elaine"
 	wakewordFilter := &wakeword.Filter{
-		WakeWord: wakeWord,
+		WakeWord: opts.WakeWord,
 		// TODO: let the AI introduce itself initially: Start by asking: "How can I help you?"
 		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
 Your name is %s.
 Keep your responses short and concise.
 You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
 When the user indicates that she heard enough (e.g. by saying "okay" multiple times in a row) or tells you to be quiet or stop it, you should answer with "Okay" once.
-However, next time the user says something, you should engage in the conversation again.`, wakeWord),
+However, next time the user says something, you should engage in the conversation again.`, opts.WakeWord),
 		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
 	}
 	httpClient := &http.Client{Timeout: 45 * time.Second}
