@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/mgoltzsche/ai-agent-vui/internal/model"
 )
 
 type Client struct {
@@ -18,7 +16,7 @@ type Client struct {
 	APIKey string
 }
 
-func (c *Client) GenerateAudio(ctx context.Context, args model.Request) (io.ReadCloser, error) {
+func (c *Client) GenerateAudio(ctx context.Context, args Request) (io.ReadCloser, error) {
 	params := map[string]interface{}{
 		"input": args.Text,
 		"model": c.Model,

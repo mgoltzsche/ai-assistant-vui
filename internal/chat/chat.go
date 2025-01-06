@@ -13,10 +13,7 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-type CompletionChunk struct {
-	RequestID int64
-	Text      string
-}
+type Request = model.Request
 
 type Completer struct {
 	ServerURL           string
@@ -24,59 +21,32 @@ type Completer struct {
 	Temperature         float32
 	FrequencyPenalty    float32
 	MaxTokens           int
-	SystemPrompt        string
 	StripResponsePrefix string
 	HTTPClient          openai.HTTPDoer
 	client              *openai.Client
 }
 
-func (c *Completer) GenerateResponseText(ctx context.Context, requests <-chan model.Request, conv *model.ConversationContext, responses <-chan string) <-chan CompletionChunk {
-	ch := make(chan CompletionChunk, 50)
+func (c *Completer) GenerateResponseText(ctx context.Context, requests <-chan Request, conv *model.ConversationContext) <-chan model.ResponseChunk {
+	ch := make(chan model.ResponseChunk, 50)
 
 	go func() {
 		defer close(ch)
 
-		messages := make([]openai.ChatCompletionMessage, 1, 100)
-		messages[0] = openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleSystem,
-			Content: c.SystemPrompt,
-		}
+		for request := range requests {
+			if conv.RequestCounter() > request.ID {
+				continue // skip outdated request (user requested something else)
+			}
 
-		for {
-			select {
-			case request, ok := <-requests:
-				if !ok {
-					return // terminate
-				}
+			log.Println("user request:", request.Text)
 
-				if conv.RequestCounter() > request.ID {
-					continue // skip outdated request (user requested something else)
-				}
+			messages := conv.AddMessage(openai.ChatCompletionMessage{
+				Role:    openai.ChatMessageRoleUser,
+				Content: request.Text,
+			})
 
-				log.Println("user request:", request.Text)
-
-				messages = append(messages, openai.ChatCompletionMessage{
-					Role:    openai.ChatMessageRoleUser,
-					Content: request.Text,
-				})
-				err := c.createOpenAIChatCompletion(ctx, messages, request.ID, conv, ch)
-				if err != nil {
-					log.Println("ERROR: chat completion:", err)
-				}
-			case spokenSentence := <-responses:
-				spokenSentence = strings.TrimSpace(strings.TrimPrefix(spokenSentence, c.StripResponsePrefix))
-
-				log.Println("assistant:", spokenSentence)
-
-				if messages[len(messages)-1].Role == openai.ChatMessageRoleAssistant {
-					// TODO: use original message without trimmed space here
-					messages[len(messages)-1].Content += " " + spokenSentence
-				} else {
-					messages = append(messages, openai.ChatCompletionMessage{
-						Role:    openai.ChatMessageRoleAssistant,
-						Content: spokenSentence,
-					})
-				}
+			err := c.createOpenAIChatCompletion(ctx, messages, request.ID, conv, ch)
+			if err != nil {
+				log.Println("ERROR: chat completion:", err)
 			}
 		}
 	}()
@@ -84,7 +54,7 @@ func (c *Completer) GenerateResponseText(ctx context.Context, requests <-chan mo
 	return ch
 }
 
-func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []openai.ChatCompletionMessage, reqID int64, conv *model.ConversationContext, ch chan<- CompletionChunk) error {
+func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []openai.ChatCompletionMessage, reqID int64, conv *model.ConversationContext, ch chan<- model.ResponseChunk) error {
 	if c.client == nil {
 		c.client = openai.NewClientWithConfig(openai.ClientConfig{
 			BaseURL:            c.ServerURL + "/v1",
@@ -149,7 +119,7 @@ func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []opena
 
 				lastSentence = sentence
 
-				ch <- CompletionChunk{
+				ch <- model.ResponseChunk{
 					RequestID: reqID,
 					Text:      sentence,
 				}
@@ -162,11 +132,30 @@ func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []opena
 	}
 
 	if buf.Len() > 0 {
-		ch <- CompletionChunk{
+		ch <- model.ResponseChunk{
 			RequestID: reqID,
 			Text:      strings.TrimSuffix(buf.String(), "</s>"),
 		}
 	}
 
 	return err
+}
+
+func (c *Completer) AddResponsesToConversation(sentences <-chan model.ResponseChunk, conv *model.ConversationContext) <-chan struct{} {
+	ch := make(chan struct{})
+
+	go func() {
+		defer close(ch)
+
+		for sentence := range sentences {
+			log.Println("assistant:", strings.TrimSpace(sentence.Text))
+
+			conv.AddMessage(openai.ChatCompletionMessage{
+				Role:    openai.ChatMessageRoleAssistant,
+				Content: strings.TrimSpace(strings.TrimPrefix(sentence.Text, c.StripResponsePrefix)),
+			})
+		}
+	}()
+
+	return ch
 }

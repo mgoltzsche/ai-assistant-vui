@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -90,8 +89,16 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 	detector := &vad.Detector{
 		ModelPath: opts.VADModelPath,
 	}
+	wakeWord := "Elaine"
 	wakewordFilter := &wakeword.Filter{
-		WakeWord: "Elaine",
+		WakeWord: wakeWord,
+		// TODO: let the AI introduce itself initially: Start by asking: "How can I help you?"
+		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
+Your name is %s.
+Keep your responses short and concise.
+When the user indicates that she heard enough (e.g. by saying "okay" repeatedly), you should answer with "Okay" once.
+When being told to be quiet or stop it, you should answer with "Okay" once.`, wakeWord),
+		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
 	}
 	httpClient := &http.Client{Timeout: 45 * time.Second}
 	transcriber := &stt.Transcriber{
@@ -102,20 +109,13 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 		},
 	}
 	chatCompleter := &chat.Completer{
-		ServerURL:        opts.ServerURL,
-		Model:            opts.ChatModel,
-		Temperature:      float32(opts.Temperature),
-		FrequencyPenalty: 1.5,
-		MaxTokens:        0,
-		// TODO: let the AI introduce itself initially: Start by asking: "How can I help you?"
-		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
-Your name is %s.
-Keep your responses short and concise.
-When the user indicates that she heard enough (e.g. by saying "okay" repeatedly), you should answer with "Okay" once.
-When being told to be quiet or stop it, you should answer with "Okay" once.`, wakewordFilter.WakeWord),
+		ServerURL:           opts.ServerURL,
+		Model:               opts.ChatModel,
+		Temperature:         float32(opts.Temperature),
+		FrequencyPenalty:    1.5,
+		MaxTokens:           0,
 		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
-		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
-		HTTPClient: httpClient,
+		HTTPClient:          httpClient,
 	}
 	speechGen := &tts.SpeechGenerator{
 		Service: &tts.Client{
@@ -144,13 +144,10 @@ When being told to be quiet or stop it, you should answer with "Okay" once.`, wa
 
 	transcriptions := transcriber.Transcribe(ctx, audioInput)
 
-	assistantResponses := make(chan string, 10)
-	defer close(assistantResponses)
-
 	requests := transcriptions2requests(transcriptions)
 	requests, conversation := wakewordFilter.FilterByWakeWord(requests)
 
-	responses := chatCompleter.GenerateResponseText(ctx, requests, conversation, assistantResponses)
+	responses := chatCompleter.GenerateResponseText(ctx, requests, conversation)
 
 	speeches := speechGen.GenerateAudio(ctx, completions2ttsrequests(responses))
 
@@ -159,9 +156,7 @@ When being told to be quiet or stop it, you should answer with "Okay" once.`, wa
 		return err
 	}
 
-	for snippet := range played {
-		assistantResponses <- strings.TrimSpace(snippet.Text)
-	}
+	<-chatCompleter.AddResponsesToConversation(played, conversation)
 
 	return nil
 }
@@ -182,14 +177,14 @@ func transcriptions2requests(transcriptions <-chan stt.Transcription) <-chan mod
 	return ch
 }
 
-func completions2ttsrequests(responses <-chan chat.CompletionChunk) <-chan model.Request {
-	ch := make(chan model.Request, 10)
+func completions2ttsrequests(responses <-chan model.ResponseChunk) <-chan tts.Request {
+	ch := make(chan tts.Request, 10)
 
 	go func() {
 		defer close(ch)
 
 		for resp := range responses {
-			ch <- model.Request{
+			ch <- tts.Request{
 				ID:   resp.RequestID,
 				Text: resp.Text,
 			}

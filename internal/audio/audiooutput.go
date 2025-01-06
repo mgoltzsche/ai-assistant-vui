@@ -20,21 +20,17 @@ type PlayRequest struct {
 	WaveData  []byte
 }
 
-type Played struct {
-	Text string
-}
-
 type Output struct {
 	Device string
 }
 
-func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.ConversationContext) (<-chan Played, error) {
+func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.ConversationContext) (<-chan model.ResponseChunk, error) {
 	device, err := outputDevice(o.Device)
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan Played, 10)
+	ch := make(chan model.ResponseChunk, 10)
 
 	go func() {
 		defer close(ch)
@@ -51,7 +47,7 @@ func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *
 			default:
 			}
 
-			ch <- Played{
+			ch <- model.ResponseChunk{
 				Text: req.Text,
 			}
 

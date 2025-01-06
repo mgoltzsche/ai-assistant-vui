@@ -8,6 +8,8 @@ import (
 	"github.com/mgoltzsche/ai-agent-vui/internal/model"
 )
 
+type Request = model.Request
+
 type GeneratedSpeech struct {
 	RequestID int64
 	Text      string
@@ -18,7 +20,7 @@ type SpeechGenerator struct {
 	Service *Client
 }
 
-func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan model.Request) <-chan GeneratedSpeech {
+func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Request) <-chan GeneratedSpeech {
 	ch := make(chan GeneratedSpeech, 10)
 
 	go func() {
