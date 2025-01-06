@@ -96,8 +96,9 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
 Your name is %s.
 Keep your responses short and concise.
-When the user indicates that she heard enough (e.g. by saying "okay" repeatedly), you should answer with "Okay" once.
-When being told to be quiet or stop it, you should answer with "Okay" once.`, wakeWord),
+You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
+When the user indicates that she heard enough (e.g. by saying "okay" multiple times in a row) or tells you to be quiet or stop it, you should answer with "Okay" once.
+However, next time the user says something, you should engage in the conversation again.`, wakeWord),
 		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
 	}
 	httpClient := &http.Client{Timeout: 45 * time.Second}
