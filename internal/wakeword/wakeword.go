@@ -8,7 +8,7 @@ import (
 	"github.com/mgoltzsche/ai-agent-vui/internal/model"
 )
 
-// TODO: use openwakeword or porcupine instead? See:
+// TODO: use openwakeword or porcupine instead? (to avoid sending audio to whisper every time somebody talks) See:
 // * https://picovoice.ai/docs/quick-start/porcupine-go/
 // * https://github.com/charithe/porcupine-go
 // * https://github.com/dscripka/openWakeWord/
@@ -22,7 +22,7 @@ type Filter struct {
 }
 
 func (f *Filter) FilterByWakeWord(requests <-chan Request) (<-chan Request, *model.ConversationContext) {
-	regex := regexp.MustCompile(fmt.Sprintf("%[1]s|^%[1]s,.+|.+, ?%[1]s$|.+, ?%[1]s,.+", regexp.QuoteMeta(f.WakeWord)))
+	regex := regexp.MustCompile(fmt.Sprintf(`(?i)(^|[^\w])%[1]s($|[^\w])`, regexp.QuoteMeta(f.WakeWord)))
 
 	var counter int64
 
