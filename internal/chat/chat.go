@@ -32,6 +32,11 @@ func (c *Completer) GenerateResponseText(ctx context.Context, requests <-chan Re
 	go func() {
 		defer close(ch)
 
+		err := c.createOpenAIChatCompletion(ctx, conv.Messages(), conv.RequestCounter(), conv, ch)
+		if err != nil {
+			log.Println("ERROR: chat completion:", err)
+		}
+
 		for request := range requests {
 			if conv.RequestCounter() > request.ID {
 				continue // skip outdated request (user requested something else)

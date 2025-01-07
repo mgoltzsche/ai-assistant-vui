@@ -56,3 +56,7 @@ func (c *ConversationContext) AddMessage(msg openai.ChatCompletionMessage) []ope
 
 	return messages
 }
+
+func (c *ConversationContext) Messages() []openai.ChatCompletionMessage {
+	return c.messages
+}

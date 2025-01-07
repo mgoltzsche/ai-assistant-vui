@@ -94,13 +94,14 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 	}
 	wakewordFilter := &wakeword.Filter{
 		WakeWord: opts.WakeWord,
-		// TODO: let the AI introduce itself initially: Start by asking: "How can I help you?"
 		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
-Your name is %s.
+Your name is %[1]s.
 Keep your responses short and concise.
 You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
-When the user indicates that she heard enough (e.g. by saying "okay" multiple times in a row) or tells you to be quiet or stop it, you should answer with "Okay" once.
-However, next time the user says something, you should engage in the conversation again.`, opts.WakeWord),
+When the user tells you to be quiet, you should answer with "Okay".
+However, next time the user says something, you should engage in the conversation again.
+Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
+`, opts.WakeWord),
 		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
 	}
 	httpClient := &http.Client{Timeout: 45 * time.Second}
