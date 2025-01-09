@@ -1,4 +1,4 @@
-module github.com/mgoltzsche/ai-agent-vui
+module github.com/mgoltzsche/ai-assistant-vui
 
 go 1.23.1
 

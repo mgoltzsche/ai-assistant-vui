@@ -5,7 +5,7 @@ import (
 	"log"
 	"regexp"
 
-	"github.com/mgoltzsche/ai-agent-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
 
 // TODO: use openwakeword or porcupine instead? (to avoid sending audio to whisper every time somebody talks) See:

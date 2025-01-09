@@ -1,4 +1,4 @@
-IMAGE?=ai-agent-vui
+IMAGE?=ai-assistant-vui
 
 INPUT_DEVICE=KLIM Talk
 OUTPUT_DEVICE=ALC1220 Analog

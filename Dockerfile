@@ -23,7 +23,7 @@ RUN ./dockerfiles/scripts/install_cmake.sh
 RUN ./build.sh --allow_running_as_root --skip_submodule_sync --config Release --build_shared_lib --update --build --parallel --cmake_extra_defines ONNXRUNTIME_VERSION=$(cat ./VERSION_NUMBER)
 
 
-FROM golang:1.23-bookworm AS agent-vui
+FROM golang:1.23-bookworm AS vui
 RUN apt-get update && apt-get upgrade -y
 RUN apt-get install -y portaudio19-dev
 COPY go.mod go.sum /build/
@@ -38,7 +38,7 @@ ENV CGO_ENABLED=1
 ENV C_INCLUDE_PATH="/usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include/onnxruntime/core/session" \
 	LIBRARY_PATH="/usr/local/lib/onnxruntime" \
 	LD_RUN_PATH="/usr/local/lib/onnxruntime"
-RUN go build -o ai-agent-vui .
+RUN go build -o ai-assistant-vui .
 
 
 FROM debian:12-slim
@@ -55,5 +55,5 @@ ARG SILERO_VAD_VERSION=v5.1.2
 RUN set -eux; \
 	mkdir /models; \
 	curl -fsSL https://github.com/snakers4/silero-vad/raw/refs/tags/$SILERO_VAD_VERSION/src/silero_vad/data/silero_vad.onnx > /models/silero_vad.onnx
-COPY --from=agent-vui /build/ai-agent-vui /ai-agent-vui
-ENTRYPOINT ["/ai-agent-vui"]
+COPY --from=vui /build/ai-assistant-vui /
+ENTRYPOINT ["/ai-assistant-vui"]

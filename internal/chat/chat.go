@@ -9,7 +9,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/mgoltzsche/ai-agent-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	openai "github.com/sashabaranov/go-openai"
 )
 

@@ -5,7 +5,7 @@ import (
 	"io"
 	"log"
 
-	"github.com/mgoltzsche/ai-agent-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
 
 type Request = model.Request

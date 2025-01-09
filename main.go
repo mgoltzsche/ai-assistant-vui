@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/gordonklaus/portaudio"
-	"github.com/mgoltzsche/ai-agent-vui/internal/audio"
-	"github.com/mgoltzsche/ai-agent-vui/internal/chat"
-	"github.com/mgoltzsche/ai-agent-vui/internal/model"
-	"github.com/mgoltzsche/ai-agent-vui/internal/stt"
-	"github.com/mgoltzsche/ai-agent-vui/internal/tts"
-	"github.com/mgoltzsche/ai-agent-vui/internal/vad"
-	"github.com/mgoltzsche/ai-agent-vui/internal/wakeword"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/audio"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tts"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/vad"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/wakeword"
 )
 
 // Derived from https://github.com/Xbozon/go-whisper-cpp-server-example/tree/main

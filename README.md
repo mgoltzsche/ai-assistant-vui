@@ -1,4 +1,4 @@
-# ai-agent-vui
+# ai-assistant-vui
 
 A voice user interface (VUI) to interact with an AI assistant.
 

@@ -11,7 +11,7 @@ import (
 	"github.com/go-audio/audio"
 	"github.com/go-audio/wav"
 	"github.com/gordonklaus/portaudio"
-	"github.com/mgoltzsche/ai-agent-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
 
 type PlayRequest struct {
