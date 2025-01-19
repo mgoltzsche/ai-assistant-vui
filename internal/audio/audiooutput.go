@@ -24,7 +24,7 @@ type Output struct {
 	Device string
 }
 
-func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.ConversationContext) (<-chan model.ResponseChunk, error) {
+func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.Conversation) (<-chan model.ResponseChunk, error) {
 	device, err := outputDevice(o.Device)
 	if err != nil {
 		return nil, err

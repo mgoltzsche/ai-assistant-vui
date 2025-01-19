@@ -16,30 +16,30 @@ type ResponseChunk struct {
 	Text      string
 }
 
-type ConversationContext struct {
+type Conversation struct {
 	requestCounter *int64
 	messages       []openai.ChatCompletionMessage
 	mutex          sync.Mutex
 }
 
-func NewConversationContext(requestCounter *int64, systemPrompt string) *ConversationContext {
+func NewConversation(requestCounter *int64, systemPrompt string) *Conversation {
 	messages := make([]openai.ChatCompletionMessage, 1, 100)
 	messages[0] = openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleSystem,
 		Content: systemPrompt,
 	}
 
-	return &ConversationContext{
+	return &Conversation{
 		requestCounter: requestCounter,
 		messages:       messages,
 	}
 }
 
-func (c *ConversationContext) RequestCounter() int64 {
+func (c *Conversation) RequestCounter() int64 {
 	return *c.requestCounter
 }
 
-func (c *ConversationContext) AddMessage(msg openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+func (c *Conversation) AddMessage(msg openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -57,6 +57,6 @@ func (c *ConversationContext) AddMessage(msg openai.ChatCompletionMessage) []ope
 	return messages
 }
 
-func (c *ConversationContext) Messages() []openai.ChatCompletionMessage {
+func (c *Conversation) Messages() []openai.ChatCompletionMessage {
 	return c.messages
 }

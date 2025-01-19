@@ -45,6 +45,7 @@ func main() {
 		VADModelPath: "/models/silero_vad.onnx",
 		STTModel:     "whisper-1",
 		ChatModel:    "llama-3-sauerkrautlm-8b-instruct",
+		//ChatModel:    "llama-3-8b-lexifun-uncensored-v1",
 		//ChatModel: "mistral-7b-instruct-v0.3",
 		TTSModel: "voice-en-us-amy-low",
 		//TTSModel:    "voice-de-kerstin-low",

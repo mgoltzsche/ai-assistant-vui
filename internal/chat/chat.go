@@ -26,7 +26,13 @@ type Completer struct {
 	client              *openai.Client
 }
 
-func (c *Completer) GenerateResponseText(ctx context.Context, requests <-chan Request, conv *model.ConversationContext) <-chan model.ResponseChunk {
+func (c *Completer) GenerateResponseText(ctx context.Context, requests <-chan Request, conv *model.Conversation) <-chan model.ResponseChunk {
+	c.client = openai.NewClientWithConfig(openai.ClientConfig{
+		BaseURL:            c.ServerURL + "/v1",
+		HTTPClient:         c.HTTPClient,
+		EmptyMessagesLimit: 10,
+	})
+
 	ch := make(chan model.ResponseChunk, 50)
 
 	go func() {
@@ -59,15 +65,7 @@ func (c *Completer) GenerateResponseText(ctx context.Context, requests <-chan Re
 	return ch
 }
 
-func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []openai.ChatCompletionMessage, reqID int64, conv *model.ConversationContext, ch chan<- model.ResponseChunk) error {
-	if c.client == nil {
-		c.client = openai.NewClientWithConfig(openai.ClientConfig{
-			BaseURL:            c.ServerURL + "/v1",
-			HTTPClient:         c.HTTPClient,
-			EmptyMessagesLimit: 10,
-		})
-	}
-
+func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []openai.ChatCompletionMessage, reqID int64, conv *model.Conversation, ch chan<- model.ResponseChunk) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -146,7 +144,7 @@ func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []opena
 	return err
 }
 
-func (c *Completer) AddResponsesToConversation(sentences <-chan model.ResponseChunk, conv *model.ConversationContext) <-chan struct{} {
+func (c *Completer) AddResponsesToConversation(sentences <-chan model.ResponseChunk, conv *model.Conversation) <-chan struct{} {
 	ch := make(chan struct{})
 
 	go func() {

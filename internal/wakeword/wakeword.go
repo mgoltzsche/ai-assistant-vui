@@ -21,7 +21,7 @@ type Filter struct {
 	SystemPrompt string
 }
 
-func (f *Filter) FilterByWakeWord(requests <-chan Request) (<-chan Request, *model.ConversationContext) {
+func (f *Filter) FilterByWakeWord(requests <-chan Request) (<-chan Request, *model.Conversation) {
 	regex := regexp.MustCompile(fmt.Sprintf(`(?i)(^|[^\w])%[1]s($|[^\w])`, regexp.QuoteMeta(f.WakeWord)))
 
 	var counter int64
@@ -43,5 +43,5 @@ func (f *Filter) FilterByWakeWord(requests <-chan Request) (<-chan Request, *mod
 		}
 	}()
 
-	return ch, model.NewConversationContext(&counter, f.SystemPrompt)
+	return ch, model.NewConversation(&counter, f.SystemPrompt)
 }
