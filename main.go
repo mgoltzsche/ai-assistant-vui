@@ -44,7 +44,8 @@ func main() {
 		VADEnabled:   true,
 		VADModelPath: "/models/silero_vad.onnx",
 		STTModel:     "whisper-1",
-		ChatModel:    "llama-3-sauerkrautlm-8b-instruct",
+		//ChatModel:    "llama-3-sauerkrautlm-8b-instruct",
+		ChatModel: "LocalAI-llama3-8b-function-call-v0.2",
 		//ChatModel:    "llama-3-8b-lexifun-uncensored-v1",
 		//ChatModel: "mistral-7b-instruct-v0.3",
 		TTSModel: "voice-en-us-amy-low",
@@ -96,13 +97,13 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 	wakewordFilter := &wakeword.Filter{
 		WakeWord: opts.WakeWord,
 		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
-Your name is %[1]s.
-Keep your responses short and concise.
-You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
-When the user tells you to be quiet, you should answer with "Okay".
-However, next time the user says something, you should engage in the conversation again.
-Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
-`, opts.WakeWord),
+		Your name is %[1]s.
+		Keep your responses short and concise.
+		You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
+		When the user tells you to be quiet, you should answer with "Okay".
+		However, next time the user says something, you should engage in the conversation again.
+		Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
+		`, opts.WakeWord),
 		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
 	}
 	httpClient := &http.Client{Timeout: 45 * time.Second}
@@ -113,10 +114,12 @@ Initially, start the conversation by asking the user how you can help them and e
 			Client: httpClient,
 		},
 	}
-	chatCompleter := &chat.Completer{
+	requester := &chat.Requester{}
+	runner := &chat.FunctionRunner{}
+	chatCompleter := &chat.Completer2{
 		ServerURL:           opts.ServerURL,
 		Model:               opts.ChatModel,
-		Temperature:         float32(opts.Temperature),
+		Temperature:         opts.Temperature,
 		FrequencyPenalty:    1.5,
 		MaxTokens:           0,
 		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
@@ -149,10 +152,17 @@ Initially, start the conversation by asking the user how you can help them and e
 
 	transcriptions := transcriber.Transcribe(ctx, audioInput)
 
-	requests := transcriptions2requests(transcriptions)
-	requests, conversation := wakewordFilter.FilterByWakeWord(requests)
+	userRequests := transcriptions2requests(transcriptions)
+	userRequests, conversation := wakewordFilter.FilterByWakeWord(userRequests)
 
-	responses := chatCompleter.GenerateResponseText(ctx, requests, conversation)
+	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequests, conversation)
+	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
+	completionRequests = chat.MergeCompletionRequests(completionRequests, toolResults)
+
+	responses, err := chatCompleter.RunChatCompletions(ctx, completionRequests, conversation, toolCallSink)
+	if err != nil {
+		return err
+	}
 
 	speeches := speechGen.GenerateAudio(ctx, completions2ttsrequests(responses))
 

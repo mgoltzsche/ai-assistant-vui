@@ -1,5 +1,6 @@
 package chat
 
+/*
 import (
 	"bytes"
 	"context"
@@ -162,3 +163,4 @@ func (c *Completer) AddResponsesToConversation(sentences <-chan model.ResponseCh
 
 	return ch
 }
+*/

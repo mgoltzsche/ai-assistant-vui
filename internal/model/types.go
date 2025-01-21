@@ -3,7 +3,7 @@ package model
 import (
 	"sync"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/tmc/langchaingo/llms"
 )
 
 type Request struct {
@@ -18,16 +18,13 @@ type ResponseChunk struct {
 
 type Conversation struct {
 	requestCounter *int64
-	messages       []openai.ChatCompletionMessage
+	messages       []llms.MessageContent
 	mutex          sync.Mutex
 }
 
 func NewConversation(requestCounter *int64, systemPrompt string) *Conversation {
-	messages := make([]openai.ChatCompletionMessage, 1, 100)
-	messages[0] = openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleSystem,
-		Content: systemPrompt,
-	}
+	messages := make([]llms.MessageContent, 1, 100)
+	messages[0] = llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt)
 
 	return &Conversation{
 		requestCounter: requestCounter,
@@ -39,7 +36,7 @@ func (c *Conversation) RequestCounter() int64 {
 	return *c.requestCounter
 }
 
-func (c *Conversation) AddMessage(msg openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+func (c *Conversation) AddMessage(msg llms.MessageContent) []llms.MessageContent {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -47,7 +44,7 @@ func (c *Conversation) AddMessage(msg openai.ChatCompletionMessage) []openai.Cha
 
 	if messages[len(messages)-1].Role == msg.Role {
 		// TODO: use original message without trimmed space here?!
-		messages[len(messages)-1].Content += " " + msg.Content
+		messages[len(messages)-1].Parts = append(messages[len(messages)-1].Parts, msg.Parts...)
 	} else {
 		messages = append(messages, msg)
 	}
@@ -57,6 +54,6 @@ func (c *Conversation) AddMessage(msg openai.ChatCompletionMessage) []openai.Cha
 	return messages
 }
 
-func (c *Conversation) Messages() []openai.ChatCompletionMessage {
+func (c *Conversation) Messages() []llms.MessageContent {
 	return c.messages
 }
