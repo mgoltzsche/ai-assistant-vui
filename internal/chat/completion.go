@@ -76,6 +76,11 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 
 	var buf bytes.Buffer
 
+	// TODO: fix streaming when function support is also enabled.
+	// Currently LocalAI does not stream the response when function support is enabled.
+	// See https://github.com/mudler/LocalAI/issues/1187
+	// While this doesn't break the app, it increases the response latency significantly.
+
 	resp, err := llm.GenerateContent(ctx,
 		conv.Messages(),
 		llms.WithStreamingFunc(streamFunc(cancel, reqID, conv, &buf, ch)),
