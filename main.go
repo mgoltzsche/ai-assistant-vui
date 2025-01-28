@@ -116,7 +116,7 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 	}
 	requester := &chat.Requester{}
 	runner := &chat.FunctionRunner{}
-	chatCompleter := &chat.Completer2{
+	chatCompleter := &chat.Completer{
 		ServerURL:           opts.ServerURL,
 		Model:               opts.ChatModel,
 		Temperature:         opts.Temperature,

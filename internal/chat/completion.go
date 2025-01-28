@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,16 +12,17 @@ import (
 	"strings"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	openai "github.com/sashabaranov/go-openai"
 	"github.com/tmc/langchaingo/jsonschema"
 	"github.com/tmc/langchaingo/llms"
-	"github.com/tmc/langchaingo/llms/openai"
+	//"github.com/tmc/langchaingo/llms/openai"
 )
 
 type ChatCompletionRequest struct {
 	RequestID int64
 }
 
-type Completer2 struct {
+type Completer struct {
 	ServerURL           string
 	Model               string
 	Temperature         float64
@@ -28,13 +30,14 @@ type Completer2 struct {
 	MaxTokens           int
 	StripResponsePrefix string
 	HTTPClient          HTTPDoer
+	client              *openai.Client
 }
 
 type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan model.ResponseChunk, error) {
+/*func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan model.ResponseChunk, error) {
 	llm, err := openai.New(
 		openai.WithHTTPClient(c.HTTPClient),
 		openai.WithBaseURL(c.ServerURL+"/v1"),
@@ -70,7 +73,7 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 	return ch, nil
 }
 
-func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- model.ResponseChunk) error {
+func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- model.ResponseChunk) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -151,6 +154,208 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 	}
 
 	return nil
+}*/
+
+func (c *Completer) RunChatCompletions(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan model.ResponseChunk, error) {
+	c.client = openai.NewClientWithConfig(openai.ClientConfig{
+		BaseURL:            c.ServerURL + "/v1",
+		HTTPClient:         c.HTTPClient,
+		EmptyMessagesLimit: 10,
+	})
+
+	ch := make(chan model.ResponseChunk, 50)
+
+	go func() {
+		defer close(ch)
+
+		err := c.createOpenAIChatCompletion(ctx, convertMessages(conv.Messages()), conv.RequestCounter(), conv, toolCallSink, ch)
+		if err != nil {
+			log.Println("ERROR: chat completion:", err)
+		}
+
+		for req := range requests {
+			if conv.RequestCounter() > req.RequestID {
+				continue // skip outdated request (user requested something else)
+			}
+
+			err := c.createOpenAIChatCompletion(ctx, convertMessages(conv.Messages()), req.RequestID, conv, toolCallSink, ch)
+			if err != nil {
+				log.Println("ERROR: chat completion:", err)
+			}
+		}
+	}()
+
+	return ch, nil
+}
+
+func convertMessages(msgs []llms.MessageContent) []openai.ChatCompletionMessage {
+	r := make([]openai.ChatCompletionMessage, len(msgs))
+
+	for i, m := range msgs {
+		content := make([]string, len(m.Parts))
+		for j, p := range m.Parts {
+			content[j] = fmt.Sprintf("%s", p)
+		}
+
+		r[i] = openai.ChatCompletionMessage{
+			Role:    string(m.Role),
+			Content: strings.Join(content, ""),
+		}
+	}
+
+	return r
+}
+
+func (c *Completer) createOpenAIChatCompletion(ctx context.Context, msgs []openai.ChatCompletionMessage, reqID int64, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- model.ResponseChunk) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	req := openai.ChatCompletionRequest{
+		Model:            c.Model,
+		Temperature:      float32(c.Temperature),
+		FrequencyPenalty: float32(c.FrequencyPenalty),
+		MaxTokens:        c.MaxTokens,
+		Messages:         msgs,
+		Functions: []openai.FunctionDefinition{
+			{
+				Name:        "getCurrentWeather",
+				Description: "Get the current weather in a given location",
+				Parameters: jsonschema.Definition{
+					Type: jsonschema.Object,
+					Properties: map[string]jsonschema.Definition{
+						"rationale": {
+							Type:        jsonschema.String,
+							Description: "The rationale for choosing this function call with these parameters",
+						},
+						"location": {
+							Type:        jsonschema.String,
+							Description: "The city and state, e.g. San Francisco, CA",
+						},
+						"unit": {
+							Type: jsonschema.String,
+							Enum: []string{"celsius", "fahrenheit"},
+						},
+					},
+					Required: []string{"rationale", "location"},
+				},
+			},
+		},
+	}
+
+	stream, err := c.client.CreateChatCompletionStream(ctx, req)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	var buf bytes.Buffer
+	lastContent := ""
+	lastSentence := ""
+
+	for {
+		response, e := stream.Recv()
+		if errors.Is(e, io.EOF) {
+			break
+		}
+		if e != nil {
+			if !errors.Is(e, context.Canceled) {
+				err = fmt.Errorf("streaming chat completion response: %w", e)
+			}
+			break
+		}
+
+		if conv.RequestCounter() > reqID {
+			// Cancel response stream if request is outdated (user requested something else)
+			cancel()
+			continue
+		}
+
+		choice := response.Choices[0]
+		content := response.Choices[0].Delta.Content
+
+		buf.WriteString(content)
+
+		if choice.FinishReason == openai.FinishReasonToolCalls {
+			// Dispatch function call
+			call, callID, err := parseFunctionCall(buf.String())
+			if err != nil {
+				return fmt.Errorf("parse function call: %w", err)
+			}
+
+			if call == nil {
+				fmt.Println("WARNING: failed to parse function call:", buf.String())
+				continue
+			}
+
+			if call.Arguments == "" {
+				return fmt.Errorf("function %q called with empty arguments", call.Name)
+			}
+
+			var args map[string]any
+
+			err = json.Unmarshal([]byte(call.Arguments), &args)
+			if err != nil {
+				return fmt.Errorf("parse function call arguments: %w", err)
+			}
+
+			conv.AddMessage(llms.MessageContent{
+				Role: llms.ChatMessageTypeAI,
+				Parts: []llms.ContentPart{llms.ToolCall{
+					ID:           callID,
+					Type:         "function",
+					FunctionCall: call,
+				}},
+			})
+
+			func() {
+				defer func() {
+					recover()
+				}()
+				toolCallSink <- ToolCallRequest{
+					RequestID: reqID,
+					FunctionCall: FunctionCall{
+						Name:      call.Name,
+						Arguments: args,
+					},
+				}
+			}()
+
+			return nil
+		}
+
+		// TODO: don't emit separate event for numbered list items, e.g. 3. ?!
+		if buf.Len() > len(content)+1 && (content == "\n" || content == " " && (lastContent == "." || lastContent == "!" || lastContent == "?")) {
+			sentence := buf.String()
+
+			if strings.TrimSpace(sentence) != "" {
+				if sentence == lastSentence {
+					// Cancel response stream if last sentence was repeated
+					cancel()
+					continue
+				}
+
+				lastSentence = sentence
+
+				ch <- model.ResponseChunk{
+					RequestID: reqID,
+					Text:      sentence,
+				}
+			}
+
+			buf.Reset()
+		}
+
+		lastContent = content
+	}
+
+	if buf.Len() > 0 {
+		ch <- model.ResponseChunk{
+			RequestID: reqID,
+			Text:      strings.TrimSuffix(buf.String(), "</s>"),
+		}
+	}
+
+	return err
 }
 
 // parseFunctionCall parses a single function call from multiple function call JSON arrays.
@@ -226,6 +431,9 @@ func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation
 		content := string(chunk)
 
 		buf.WriteString(content)
+
+		// TODO: fix streaming
+		fmt.Println("## chunk:", content)
 
 		// TODO: don't emit separate event for numbered list items, e.g. 3. ?!
 		if buf.Len() > len(content)+1 && (content == "\n" || content == " " && (lastContent == "." || lastContent == "!" || lastContent == "?")) {
@@ -357,7 +565,7 @@ var tools = []llms.Tool{
 	},
 }
 
-func (c *Completer2) AddResponsesToConversation(sentences <-chan model.ResponseChunk, conv *model.Conversation) <-chan struct{} {
+func (c *Completer) AddResponsesToConversation(sentences <-chan model.ResponseChunk, conv *model.Conversation) <-chan struct{} {
 	ch := make(chan struct{})
 
 	go func() {
