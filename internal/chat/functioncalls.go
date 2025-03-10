@@ -2,8 +2,11 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"strings"
 
+	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/tmc/langchaingo/llms"
 )
@@ -20,6 +23,7 @@ type FunctionCall struct {
 }
 
 type FunctionRunner struct {
+	Functions functions.FunctionProvider
 }
 
 func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conversation) (<-chan ChatCompletionRequest, chan<- ToolCallRequest) {
@@ -44,9 +48,33 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 
 			log.Printf("Calling function %q with args %#v", call.FunctionCall.Name, call.FunctionCall.Arguments)
 
-			// TODO: implement actual call
+			var functionCallResult string
 
-			fakeFunctionCallResult := "sunny day, 27°C"
+			fnList, err := r.Functions.Functions()
+			if err == nil {
+				var fn functions.Function
+				fn, err = functions.FindByName(call.FunctionCall.Name, fnList)
+				if err == nil {
+					err = validateParameters(call.FunctionCall, fn.Definition())
+					if err == nil {
+						functionCallResult, err = fn.Call(call.FunctionCall.Arguments)
+						functionCallResult = strings.TrimSpace(functionCallResult)
+
+						if err == nil && functionCallResult == "" {
+							err = fmt.Errorf("function call %q returned empty result", call.FunctionCall.Name)
+						}
+					}
+				}
+			}
+			if err != nil {
+				log.Println("ERROR: Failed to call function:", err)
+
+				functionCallResult = fmt.Sprintf("Failed to call function: %s", err)
+			} else {
+				for _, line := range strings.Split(functionCallResult, "\n") {
+					log.Printf("Function %s result: %s", call.FunctionCall.Name, line)
+				}
+			}
 
 			conv.AddMessage(llms.MessageContent{
 				Role: llms.ChatMessageTypeTool,
@@ -54,7 +82,7 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 					llms.ToolCallResponse{
 						ToolCallID: call.ToolCallID,
 						Name:       call.FunctionCall.Name,
-						Content:    fakeFunctionCallResult,
+						Content:    functionCallResult,
 					},
 				},
 			})
@@ -66,4 +94,13 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 	}()
 
 	return completionRequests, toolCalls
+}
+
+func validateParameters(call FunctionCall, paramDefinition llms.FunctionDefinition) error {
+	// TODO: validate parameters
+	if len(call.Arguments) == 0 {
+		return fmt.Errorf("function %q called with empty arguments", call.Name)
+	}
+
+	return nil
 }

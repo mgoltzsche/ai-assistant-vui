@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
-	"github.com/tmc/langchaingo/jsonschema"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 )
@@ -28,6 +28,7 @@ type Completer2 struct {
 	MaxTokens           int
 	StripResponsePrefix string
 	HTTPClient          HTTPDoer
+	Functions           functions.FunctionProvider
 }
 
 type HTTPDoer interface {
@@ -74,6 +75,16 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	functions, err := c.Functions.Functions()
+	if err != nil {
+		return fmt.Errorf("get available functions: %w", err)
+	}
+
+	llmFunctions := make([]llms.FunctionDefinition, len(functions))
+	for i, f := range functions {
+		llmFunctions[i] = f.Definition()
+	}
+
 	var buf bytes.Buffer
 
 	// TODO: fix streaming when function support is also enabled.
@@ -85,7 +96,7 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 		conv.Messages(),
 		llms.WithStreamingFunc(streamFunc(cancel, reqID, conv, &buf, ch)),
 		//llms.WithTools(tools),
-		llms.WithFunctions(functions),
+		llms.WithFunctions(llmFunctions),
 		//llms.WithFunctionCallBehavior(llms.FunctionCallBehaviorAuto),
 		llms.WithTemperature(c.Temperature),
 		llms.WithFrequencyPenalty(c.FrequencyPenalty),
@@ -111,15 +122,13 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 				call = toolCall.FunctionCall
 			}
 
-			if call.Arguments == "" {
-				return fmt.Errorf("function %q called with empty arguments", call.Name)
-			}
-
 			var args map[string]any
 
-			err = json.Unmarshal([]byte(call.Arguments), &args)
-			if err != nil {
-				return fmt.Errorf("parse function call arguments: %w", err)
+			if call.Arguments != "" {
+				err = json.Unmarshal([]byte(call.Arguments), &args)
+				if err != nil {
+					return fmt.Errorf("parse function call arguments: %w", err)
+				}
 			}
 
 			conv.AddMessage(llms.MessageContent{
@@ -258,108 +267,6 @@ func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation
 
 		return nil
 	}
-}
-
-var functions = []llms.FunctionDefinition{
-	{
-		Name:        "getCurrentWeather",
-		Description: "Get the current weather in a given location",
-		Parameters: jsonschema.Definition{
-			Type: jsonschema.Object,
-			Properties: map[string]jsonschema.Definition{
-				"rationale": {
-					Type:        jsonschema.String,
-					Description: "The rationale for choosing this function call with these parameters",
-				},
-				"location": {
-					Type:        jsonschema.String,
-					Description: "The city and state, e.g. San Francisco, CA",
-				},
-				"unit": {
-					Type: jsonschema.String,
-					Enum: []string{"celsius", "fahrenheit"},
-				},
-			},
-			Required: []string{"rationale", "location"},
-		},
-	},
-}
-
-var tools = []llms.Tool{
-	{
-		Type: "function",
-		Function: &llms.FunctionDefinition{
-			Name:        "getCurrentWeather",
-			Description: "Get the current weather in a given location",
-			Parameters: jsonschema.Definition{
-				Type: jsonschema.Object,
-				Properties: map[string]jsonschema.Definition{
-					"rationale": {
-						Type:        jsonschema.String,
-						Description: "The rationale for choosing this function call with these parameters",
-					},
-					"location": {
-						Type:        jsonschema.String,
-						Description: "The city and state, e.g. San Francisco, CA",
-					},
-					"unit": {
-						Type: jsonschema.String,
-						Enum: []string{"celsius", "fahrenheit"},
-					},
-				},
-				Required: []string{"rationale", "location"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: &llms.FunctionDefinition{
-			Name:        "getTomorrowWeather",
-			Description: "Get the predicted weather in a given location",
-			Parameters: jsonschema.Definition{
-				Type: jsonschema.Object,
-				Properties: map[string]jsonschema.Definition{
-					"rationale": {
-						Type:        jsonschema.String,
-						Description: "The rationale for choosing this function call with these parameters",
-					},
-					"location": {
-						Type:        jsonschema.String,
-						Description: "The city and state, e.g. San Francisco, CA",
-					},
-					"unit": {
-						Type: jsonschema.String,
-						Enum: []string{"celsius", "fahrenheit"},
-					},
-				},
-				Required: []string{"rationale", "location"},
-			},
-		},
-	},
-	{
-		Type: "function",
-		Function: &llms.FunctionDefinition{
-			Name:        "getSuggestedPrompts",
-			Description: "Given the user's input prompt suggest some related prompts",
-			Parameters: jsonschema.Definition{
-				Type: jsonschema.Object,
-				Properties: map[string]jsonschema.Definition{
-					"rationale": {
-						Type:        jsonschema.String,
-						Description: "The rationale for choosing this function call with these parameters",
-					},
-					"suggestions": {
-						Type: jsonschema.Array,
-						Items: &jsonschema.Definition{
-							Type:        jsonschema.String,
-							Description: "A suggested prompt",
-						},
-					},
-				},
-				Required: []string{"rationale", "suggestions"},
-			},
-		},
-	},
 }
 
 func (c *Completer2) AddResponsesToConversation(sentences <-chan model.ResponseChunk, conv *model.Conversation) <-chan struct{} {

@@ -15,4 +15,4 @@ run-localai:
 
 run-vui: build
 	mkdir -p output
-	docker run --rm --privileged --network=host $(IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
+	docker run --rm --privileged --network=host -v /var/run/docker.sock:/var/run/docker.sock $(IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"

@@ -13,62 +13,40 @@ import (
 	"github.com/gordonklaus/portaudio"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/audio"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/functions/docker"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tts"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vad"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/wakeword"
+	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
 )
 
 // Derived from https://github.com/Xbozon/go-whisper-cpp-server-example/tree/main
 // and https://github.com/snakers4/silero-vad/blob/master/examples/go/cmd/main.go
 
-type Options struct {
-	ServerURL    string
-	InputDevice  string
-	OutputDevice string
-	MinVolume    int
-	VADEnabled   bool
-	VADModelPath string
-	STTModel     string
-	TTSModel     string
-	ChatModel    string
-	Temperature  float64
-	WakeWord     string
-}
-
 func main() {
-	opts := Options{
-		ServerURL:    "http://localhost:8080",
-		MinVolume:    450,
-		VADEnabled:   true,
-		VADModelPath: "/models/silero_vad.onnx",
-		STTModel:     "whisper-1",
-		ChatModel:    "localai-functioncall-qwen2.5-7b-v0.5",
-		//ChatModel:    "edgerunner-command-nested-i1",
-		//ChatModel:    "replete-llm-v2.5-qwen-7b",
-		//ChatModel: "LocalAI-llama3-8b-function-call-v0.2",
-		//ChatModel: "llama-3-sauerkrautlm-8b-instruct",
-		//ChatModel:    "llama-3-8b-lexifun-uncensored-v1",
-		//ChatModel: "mistral-7b-instruct-v0.3",
-		TTSModel: "voice-en-us-amy-low",
-		//TTSModel:    "voice-de-kerstin-low",
-		Temperature: 0.7,
-		WakeWord:    "Computer",
-	}
+	configFile := "/etc/ai-assistant-vui/config.yaml"
+	cfg, err := config.FromFile(configFile)
+	configFlag := &ConfigFlag{File: configFile, Config: &cfg}
 
-	flag.StringVar(&opts.ServerURL, "server-url", opts.ServerURL, "URL pointing to the OpenAI API server that runs the LLM")
-	flag.StringVar(&opts.InputDevice, "input-device", opts.InputDevice, "name or ID or the audio input device")
-	flag.StringVar(&opts.OutputDevice, "output-device", opts.OutputDevice, "name or ID or the audio output device")
-	flag.IntVar(&opts.MinVolume, "min-volume", opts.MinVolume, "min input volume threshold")
-	flag.BoolVar(&opts.VADEnabled, "vad", opts.VADEnabled, "enable voice activity detection (VAD)")
-	flag.StringVar(&opts.VADModelPath, "vad-model", opts.VADModelPath, "path to the VAD model")
-	flag.StringVar(&opts.STTModel, "stt-model", opts.STTModel, "name of the STT model to use")
-	flag.StringVar(&opts.TTSModel, "tts-model", opts.TTSModel, "name of the TTS model to use")
-	flag.StringVar(&opts.ChatModel, "chat-model", opts.ChatModel, "name of the chat model to use")
-	flag.Float64Var(&opts.Temperature, "temperature", opts.Temperature, "temperature parameter for the chat LLM")
-	flag.StringVar(&opts.WakeWord, "wake-word", opts.WakeWord, "word used to address the assistent (needs to be recognized by whisper)")
+	flag.Var(configFlag, "config", "Path to the configuration file")
+	flag.StringVar(&cfg.ServerURL, "server-url", cfg.ServerURL, "URL pointing to the OpenAI API server that runs the LLM")
+	flag.StringVar(&cfg.InputDevice, "input-device", cfg.InputDevice, "name or ID or the audio input device")
+	flag.StringVar(&cfg.OutputDevice, "output-device", cfg.OutputDevice, "name or ID or the audio output device")
+	flag.IntVar(&cfg.MinVolume, "min-volume", cfg.MinVolume, "min input volume threshold")
+	flag.BoolVar(&cfg.VADEnabled, "vad", cfg.VADEnabled, "enable voice activity detection (VAD)")
+	flag.StringVar(&cfg.VADModelPath, "vad-model", cfg.VADModelPath, "path to the VAD model")
+	flag.StringVar(&cfg.STTModel, "stt-model", cfg.STTModel, "name of the STT model to use")
+	flag.StringVar(&cfg.TTSModel, "tts-model", cfg.TTSModel, "name of the TTS model to use")
+	flag.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "name of the chat model to use")
+	flag.Float64Var(&cfg.Temperature, "temperature", cfg.Temperature, "temperature parameter for the chat LLM")
+	flag.StringVar(&cfg.WakeWord, "wake-word", cfg.WakeWord, "word used to address the assistent (needs to be recognized by whisper)")
 	flag.Parse()
+
+	if !configFlag.IsSet && err != nil {
+		log.Fatal(err)
+	}
 
 	portaudio.Initialize()
 	defer portaudio.Terminate()
@@ -76,29 +54,32 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	err := runAudioPipeline(ctx, opts)
+	err = runAudioPipeline(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func runAudioPipeline(ctx context.Context, opts Options) error {
+func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
+	functions := &docker.Functions{
+		FunctionDefinitions: cfg.Functions,
+	}
 	audioDevice := &audio.Input{
-		Device:      opts.InputDevice,
+		Device:      cfg.InputDevice,
 		SampleRate:  16000,
 		Channels:    1,
-		MinVolume:   opts.MinVolume,
+		MinVolume:   cfg.MinVolume,
 		MinDelay:    time.Second,
 		MaxDuration: time.Second * 25,
 	}
 	audioOutput := &audio.Output{
-		Device: opts.OutputDevice,
+		Device: cfg.OutputDevice,
 	}
 	detector := &vad.Detector{
-		ModelPath: opts.VADModelPath,
+		ModelPath: cfg.VADModelPath,
 	}
 	wakewordFilter := &wakeword.Filter{
-		WakeWord: opts.WakeWord,
+		WakeWord: cfg.WakeWord,
 		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
 		Your name is %[1]s.
 		Keep your responses short and concise.
@@ -106,32 +87,35 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 		When the user tells you to be quiet, you should answer with "Okay".
 		However, next time the user says something, you should engage in the conversation again.
 		Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
-		`, opts.WakeWord),
+		`, cfg.WakeWord),
 		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
 	}
 	httpClient := &http.Client{Timeout: 45 * time.Second}
 	transcriber := &stt.Transcriber{
 		Service: &stt.Client{
-			URL:    opts.ServerURL,
-			Model:  opts.STTModel,
+			URL:    cfg.ServerURL,
+			Model:  cfg.STTModel,
 			Client: httpClient,
 		},
 	}
 	requester := &chat.Requester{}
-	runner := &chat.FunctionRunner{}
+	runner := &chat.FunctionRunner{
+		Functions: functions,
+	}
 	chatCompleter := &chat.Completer2{
-		ServerURL:           opts.ServerURL,
-		Model:               opts.ChatModel,
-		Temperature:         opts.Temperature,
+		ServerURL:           cfg.ServerURL,
+		Model:               cfg.ChatModel,
+		Temperature:         cfg.Temperature,
 		FrequencyPenalty:    1.5,
 		MaxTokens:           0,
 		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
 		HTTPClient:          httpClient,
+		Functions:           functions,
 	}
 	speechGen := &tts.SpeechGenerator{
 		Service: &tts.Client{
-			URL:    opts.ServerURL,
-			Model:  opts.TTSModel,
+			URL:    cfg.ServerURL,
+			Model:  cfg.TTSModel,
 			Client: httpClient,
 		},
 	}
@@ -146,7 +130,7 @@ func runAudioPipeline(ctx context.Context, opts Options) error {
 		return err
 	}
 
-	if opts.VADEnabled {
+	if cfg.VADEnabled {
 		audioInput, err = detector.DetectVoiceActivity(audioInput)
 		if err != nil {
 			return err
@@ -250,3 +234,27 @@ func speeches2playrequests(speeches <-chan tts.GeneratedSpeech) <-chan audio.Pla
 	}
 	return nil
 }*/
+
+type ConfigFlag struct {
+	File   string
+	Config *config.Configuration
+	IsSet  bool
+}
+
+func (f *ConfigFlag) Set(path string) error {
+	f.File = path
+
+	cfg, err := config.FromFile(path)
+	if err != nil {
+		return err
+	}
+
+	*f.Config = cfg
+	f.IsSet = true
+
+	return nil
+}
+
+func (f *ConfigFlag) String() string {
+	return f.File
+}

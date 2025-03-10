@@ -34,6 +34,7 @@ COPY --from=onnxruntime /onnxruntime/build/Linux/Release/libonnxruntime.so* /usr
 COPY --from=onnxruntime /onnxruntime/include /usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include
 COPY main.go /build/
 COPY internal /build/internal
+COPY pkg /build/pkg
 ENV CGO_ENABLED=1
 ENV C_INCLUDE_PATH="/usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include/onnxruntime/core/session" \
 	LIBRARY_PATH="/usr/local/lib/onnxruntime" \
@@ -56,4 +57,5 @@ RUN set -eux; \
 	mkdir /models; \
 	curl -fsSL https://github.com/snakers4/silero-vad/raw/refs/tags/$SILERO_VAD_VERSION/src/silero_vad/data/silero_vad.onnx > /models/silero_vad.onnx
 COPY --from=vui /build/ai-assistant-vui /
+COPY config.yaml /etc/ai-assistant-vui/config.yaml
 ENTRYPOINT ["/ai-assistant-vui"]

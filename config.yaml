@@ -1,0 +1,98 @@
+serverURL: http://localhost:8080
+minVolume: 450
+vadEnabled: true
+vadModelPath: /models/silero_vad.onnx
+sttModel: whisper-1
+chatModel: localai-functioncall-qwen2.5-7b-v0.5
+ttsModel: voice-en-us-amy-low
+#ttsModel: voice-de-kerstin-low
+temperature: 0.7
+wakeWord: Computer
+
+functions:
+- name: expr
+  description: Evaluate a mathematical expression.
+  parameters:
+    type: object
+    properties:
+      input:
+        type: string
+        description: |
+          The mathematical formular in form of whitespace-separated numbers and operators.
+          Numbers are formatted using english decimal notation.
+          Operators are as follows: + - * / %.
+          Example expression: 6 / 2 + 5
+    required: ["input"]
+  image: alpine:3.21
+  command: /bin/sh
+  args:
+  - -euc
+  - |
+    echo "$PARAMETER_INPUT" | sed -E \
+      -e 's/([0-9\.,]+)/\1 /g' \
+      -e 's/ (\+|-|\/|%)/ \1 /g' \
+      -e 's/ +/ /g' | xargs expr
+
+- name: getCurrentWeather
+  description: Get the current weather in a given location.
+  parameters:
+    type: object
+    properties:
+      rationale:
+        type: string
+        description: The rationale for choosing this function call with these parameters
+      location:
+        type: string
+        description: The city and state, e.g. San Francisco, CA
+      unit:
+        type: string
+        enum: ["celsius", "fahrenheit"]
+    required: ["rationale", "location"]
+  image: alpine:3.21
+  command: /bin/sh
+  args:
+  - -euc
+  - |
+    # TODO: implement
+    echo "sunny day, 27 ${PARAMETER_UNIT:-celsius} in $PARAMETER_LOCATION"
+
+- name: websearch
+  description: Search the web for a given query.
+  parameters:
+    type: object
+    properties:
+      rationale:
+        type: string
+        description: The rationale for choosing this function call with these parameters.
+      query:
+        type: string
+        description: The query keywords to search the web for.
+    required: ["rationale", "query"]
+  # Use DuckDuckGo search
+  image: jaymoulin/ddgr:v2.2
+  command: /bin/sh
+  args:
+  - -euc
+  - ddgr --noprompt "$PARAMETER_QUERY"
+
+- name: wikipedia
+  description: Search Wikipedia for a given name.
+  parameters:
+    type: object
+    properties:
+      rationale:
+        type: string
+        description: The rationale for choosing this function call with these parameters.
+      query:
+        type: string
+        description: The name of the thing to search on Wikipedia.
+    required: ["rationale", "query"]
+  # Using yq instead of jq here since official jq image doesn't ship curl/wget
+  image: mikefarah/yq:4
+  command: /bin/sh
+  args:
+  - -euc
+  - |
+    ENCODED_TITLE="$(yq eval -n 'env(PARAMETER_QUERY) | @uri')"
+    RESPONSE="$(wget -qO - "https://en.wikipedia.org/w/api.php?format=json&action=query&titles=$ENCODED_TITLE&prop=extracts&explaintext=true")"
+    echo "$RESPONSE" | yq eval -e '.query.pages.*.extract'
