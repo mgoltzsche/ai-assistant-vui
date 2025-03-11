@@ -16,6 +16,8 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
+type ResponseChunk = model.Message
+
 type ChatCompletionRequest struct {
 	RequestID int64
 }
@@ -35,7 +37,7 @@ type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan model.ResponseChunk, error) {
+func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan ResponseChunk, error) {
 	llm, err := openai.New(
 		openai.WithHTTPClient(c.HTTPClient),
 		openai.WithBaseURL(c.ServerURL+"/v1"),
@@ -46,7 +48,7 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 		return nil, err
 	}
 
-	ch := make(chan model.ResponseChunk, 50)
+	ch := make(chan ResponseChunk, 50)
 
 	go func() {
 		defer close(ch)
@@ -71,7 +73,7 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 	return ch, nil
 }
 
-func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- model.ResponseChunk) error {
+func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -158,7 +160,7 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 	}
 
 	if buf.Len() > 0 {
-		ch <- model.ResponseChunk{
+		ch <- ResponseChunk{
 			RequestID: reqID,
 			Text:      strings.TrimSuffix(buf.String(), "</s>"),
 		}
@@ -226,7 +228,7 @@ type functionCall struct {
 	Arguments string `Json:"arguments"`
 }
 
-func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- model.ResponseChunk) func(ctx context.Context, chunk []byte) error {
+func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
 	lastContent := ""
 	lastSentence := ""
 
@@ -254,7 +256,7 @@ func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation
 
 				lastSentence = sentence
 
-				ch <- model.ResponseChunk{
+				ch <- ResponseChunk{
 					RequestID: reqID,
 					Text:      sentence,
 				}
@@ -269,7 +271,7 @@ func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation
 	}
 }
 
-func (c *Completer2) AddResponsesToConversation(sentences <-chan model.ResponseChunk, conv *model.Conversation) <-chan struct{} {
+func (c *Completer2) AddResponsesToConversation(sentences <-chan ResponseChunk, conv *model.Conversation) <-chan struct{} {
 	ch := make(chan struct{})
 
 	go func() {

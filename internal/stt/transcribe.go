@@ -10,14 +10,14 @@ import (
 	"github.com/go-audio/audio"
 	"github.com/go-audio/wav"
 	"github.com/orcaman/writerseeker"
+
+	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
+
+type Transcription = model.Message
 
 type Service interface {
 	Transcribe(ctx context.Context, wavData []byte) (Transcription, error)
-}
-
-type Transcription struct {
-	Text string
 }
 
 type Transcriber struct {

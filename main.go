@@ -61,6 +61,16 @@ func main() {
 }
 
 func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
+	systemPrompt := fmt.Sprintf(`You are a helpful assistant.
+		Your name is %[1]s.
+		Keep your responses short and concise.
+		You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
+		When the user tells you to be quiet, you should answer with "Okay".
+		However, next time the user says something, you should engage in the conversation again.
+		Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
+		`, cfg.WakeWord)
+	//systemPrompt := "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!"
+	conversation := model.NewConversation(systemPrompt)
 	functions := &docker.Functions{
 		FunctionDefinitions: cfg.Functions,
 	}
@@ -80,15 +90,6 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	}
 	wakewordFilter := &wakeword.Filter{
 		WakeWord: cfg.WakeWord,
-		SystemPrompt: fmt.Sprintf(`You are a helpful assistant.
-		Your name is %[1]s.
-		Keep your responses short and concise.
-		You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
-		When the user tells you to be quiet, you should answer with "Okay".
-		However, next time the user says something, you should engage in the conversation again.
-		Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
-		`, cfg.WakeWord),
-		//SystemPrompt: "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!",
 	}
 	httpClient := &http.Client{Timeout: 45 * time.Second}
 	transcriber := &stt.Transcriber{
@@ -138,10 +139,7 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	}
 
 	transcriptions := transcriber.Transcribe(ctx, audioInput)
-
-	userRequests := transcriptions2requests(transcriptions)
-	userRequests, conversation := wakewordFilter.FilterByWakeWord(userRequests)
-
+	userRequests := wakewordFilter.FilterByWakeWord(transcriptions)
 	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequests, conversation)
 	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
 	completionRequests = chat.MergeCompletionRequests(completionRequests, toolResults)
@@ -151,9 +149,9 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 		return err
 	}
 
-	speeches := speechGen.GenerateAudio(ctx, completions2ttsrequests(responses))
+	speeches := speechGen.GenerateAudio(ctx, responses)
 
-	played, err := audioOutput.PlayAudio(ctx, speeches2playrequests(speeches), conversation)
+	played, err := audioOutput.PlayAudio(ctx, speeches, conversation)
 	if err != nil {
 		return err
 	}
@@ -161,57 +159,6 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	<-chatCompleter.AddResponsesToConversation(played, conversation)
 
 	return nil
-}
-
-func transcriptions2requests(transcriptions <-chan stt.Transcription) <-chan model.Request {
-	ch := make(chan model.Request, 10)
-
-	go func() {
-		defer close(ch)
-
-		for transcription := range transcriptions {
-			ch <- model.Request{
-				Text: transcription.Text,
-			}
-		}
-	}()
-
-	return ch
-}
-
-func completions2ttsrequests(responses <-chan model.ResponseChunk) <-chan tts.Request {
-	ch := make(chan tts.Request, 10)
-
-	go func() {
-		defer close(ch)
-
-		for resp := range responses {
-			ch <- tts.Request{
-				ID:   resp.RequestID,
-				Text: resp.Text,
-			}
-		}
-	}()
-
-	return ch
-}
-
-func speeches2playrequests(speeches <-chan tts.GeneratedSpeech) <-chan audio.PlayRequest {
-	ch := make(chan audio.PlayRequest, 5)
-
-	go func() {
-		defer close(ch)
-
-		for speech := range speeches {
-			ch <- audio.PlayRequest{
-				RequestID: speech.RequestID,
-				Text:      speech.Text,
-				WaveData:  speech.WaveData,
-			}
-		}
-	}()
-
-	return ch
 }
 
 /*func writeWavFile(buffer []int16, sampleRate, channels int) error {

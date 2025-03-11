@@ -97,10 +97,11 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 }
 
 func validateParameters(call FunctionCall, paramDefinition llms.FunctionDefinition) error {
-	// TODO: validate parameters
 	if len(call.Arguments) == 0 {
 		return fmt.Errorf("function %q called with empty arguments", call.Name)
 	}
+
+	// TODO: validate parameters
 
 	return nil
 }

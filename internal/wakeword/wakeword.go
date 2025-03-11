@@ -14,28 +14,22 @@ import (
 // * https://github.com/dscripka/openWakeWord/
 // * https://community.rhasspy.org/t/openwakeword-new-library-and-pre-trained-models-for-wakeword-and-phrase-detection/4162
 
-type Request = model.Request
+type Message = model.Message
 
 type Filter struct {
-	WakeWord     string
-	SystemPrompt string
+	WakeWord string
 }
 
-func (f *Filter) FilterByWakeWord(requests <-chan Request) (<-chan Request, *model.Conversation) {
+func (f *Filter) FilterByWakeWord(requests <-chan Message) <-chan Message {
 	regex := regexp.MustCompile(fmt.Sprintf(`(?i)(^|[^\w])%[1]s($|[^\w])`, regexp.QuoteMeta(f.WakeWord)))
 
-	var counter int64
-
-	ch := make(chan Request, 5)
+	ch := make(chan Message, 5)
 
 	go func() {
 		defer close(ch)
 
 		for req := range requests {
 			if regex.MatchString(req.Text) {
-				counter++
-				req.ID = counter
-
 				ch <- req
 			} else {
 				log.Println("user:", req.Text)
@@ -43,5 +37,5 @@ func (f *Filter) FilterByWakeWord(requests <-chan Request) (<-chan Request, *mod
 		}
 	}()
 
-	return ch, model.NewConversation(&counter, f.SystemPrompt)
+	return ch
 }

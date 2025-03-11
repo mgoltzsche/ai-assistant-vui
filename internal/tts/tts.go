@@ -8,13 +8,8 @@ import (
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
 
-type Request = model.Request
-
-type GeneratedSpeech struct {
-	RequestID int64
-	Text      string
-	WaveData  []byte
-}
+type Request = model.Message
+type GeneratedSpeech = model.AudioMessage
 
 type SpeechGenerator struct {
 	Service *Client
@@ -39,9 +34,11 @@ func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Req
 			}
 
 			ch <- GeneratedSpeech{
-				RequestID: req.ID,
-				Text:      req.Text,
-				WaveData:  b,
+				Message: model.Message{
+					RequestID: req.RequestID,
+					Text:      req.Text,
+				},
+				WaveData: b,
 			}
 		}
 	}()

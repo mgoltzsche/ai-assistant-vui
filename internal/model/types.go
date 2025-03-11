@@ -6,34 +6,42 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-type Request struct {
-	ID   int64
-	Text string
-}
-
-type ResponseChunk struct {
+type Message struct {
 	RequestID int64
 	Text      string
 }
 
+type AudioMessage struct {
+	Message
+	WaveData []byte
+}
+
 type Conversation struct {
-	requestCounter *int64
+	requestCounter int64
 	messages       []llms.MessageContent
 	mutex          sync.Mutex
 }
 
-func NewConversation(requestCounter *int64, systemPrompt string) *Conversation {
+func NewConversation(systemPrompt string) *Conversation {
 	messages := make([]llms.MessageContent, 1, 100)
 	messages[0] = llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt)
 
 	return &Conversation{
-		requestCounter: requestCounter,
-		messages:       messages,
+		messages: messages,
 	}
 }
 
 func (c *Conversation) RequestCounter() int64 {
-	return *c.requestCounter
+	return c.requestCounter
+}
+
+func (c *Conversation) NewRequestID() int64 {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	c.requestCounter++
+
+	return c.requestCounter
 }
 
 func (c *Conversation) AddMessage(msg llms.MessageContent) []llms.MessageContent {

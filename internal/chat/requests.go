@@ -8,28 +8,25 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-type Request = model.Request
+type Message = model.Message
 
 type Requester struct {
 }
 
-func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests <-chan Request, conv *model.Conversation) <-chan ChatCompletionRequest {
+func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests <-chan Message, conv *model.Conversation) <-chan ChatCompletionRequest {
 	ch := make(chan ChatCompletionRequest)
 
 	go func() {
 		defer close(ch)
 
 		for request := range requests {
-			if conv.RequestCounter() > request.ID {
-				continue // skip outdated request (user requested something else)
-			}
+			reqID := conv.NewRequestID()
 
 			log.Println("user request:", request.Text)
-
 			conv.AddMessage(llms.TextParts(llms.ChatMessageTypeHuman, request.Text))
 
 			ch <- ChatCompletionRequest{
-				RequestID: request.ID,
+				RequestID: reqID,
 			}
 		}
 	}()

@@ -14,23 +14,20 @@ import (
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
 
-type PlayRequest struct {
-	RequestID int64
-	Text      string
-	WaveData  []byte
-}
+type PlayRequest = model.AudioMessage
+type ResponseChunk = model.Message
 
 type Output struct {
 	Device string
 }
 
-func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.Conversation) (<-chan model.ResponseChunk, error) {
+func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.Conversation) (<-chan ResponseChunk, error) {
 	device, err := outputDevice(o.Device)
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan model.ResponseChunk, 10)
+	ch := make(chan ResponseChunk, 10)
 
 	go func() {
 		defer close(ch)
@@ -47,7 +44,7 @@ func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *
 			default:
 			}
 
-			ch <- model.ResponseChunk{
+			ch <- ResponseChunk{
 				Text: req.Text,
 			}
 
