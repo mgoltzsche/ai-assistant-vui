@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
@@ -15,6 +16,8 @@ import (
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 )
+
+var endOfSentenceRegex = regexp.MustCompile(`(\.|\?|!)+(\s+|$)`)
 
 type ResponseChunk = model.Message
 
@@ -160,9 +163,13 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 	}
 
 	if buf.Len() > 0 {
-		ch <- ResponseChunk{
-			RequestID: reqID,
-			Text:      strings.TrimSuffix(buf.String(), "</s>"),
+		msg := strings.TrimSuffix(buf.String(), "</s>")
+
+		for _, sentence := range splitIntoSentences(msg) {
+			ch <- ResponseChunk{
+				RequestID: reqID,
+				Text:      sentence,
+			}
 		}
 	}
 
@@ -256,9 +263,11 @@ func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation
 
 				lastSentence = sentence
 
-				ch <- ResponseChunk{
-					RequestID: reqID,
-					Text:      sentence,
+				for _, sentence := range splitIntoSentences(sentence) {
+					ch <- ResponseChunk{
+						RequestID: reqID,
+						Text:      sentence,
+					}
 				}
 			}
 
@@ -285,4 +294,25 @@ func (c *Completer2) AddResponsesToConversation(sentences <-chan ResponseChunk, 
 	}()
 
 	return ch
+}
+
+// splitIntoSentences splits the given message at punctuation marks.
+// This is to make the response appear to be streamed when LocalAI doesn't return a streamed response.
+// Processing the response sentence by sentence reduces the time to the first response and allows the user to interrupt the AI verbally between each spoken sentence.
+// See https://github.com/mudler/LocalAI/issues/1187
+func splitIntoSentences(msg string) []string {
+	m := endOfSentenceRegex.FindAllStringIndex(msg, -1)
+	sentences := make([]string, len(m))
+	pos := 0
+
+	for i, idx := range m {
+		sentences[i] = strings.TrimSpace(msg[pos:idx[1]])
+		pos = idx[1]
+	}
+
+	if pos < len(msg) && len(strings.TrimSpace(msg[pos:])) > 0 {
+		sentences = append(sentences, msg[pos:])
+	}
+
+	return sentences
 }
