@@ -149,14 +149,14 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 		return err
 	}
 
-	speeches := speechGen.GenerateAudio(ctx, responses)
+	speeches := speechGen.GenerateAudio(ctx, responses, conversation)
 
-	played, err := audioOutput.PlayAudio(ctx, speeches, conversation)
+	done, err := audioOutput.PlayAudio(ctx, speeches, conversation)
 	if err != nil {
 		return err
 	}
 
-	<-chatCompleter.AddResponsesToConversation(played, conversation)
+	<-done
 
 	return nil
 }

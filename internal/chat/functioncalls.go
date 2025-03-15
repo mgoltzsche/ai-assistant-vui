@@ -76,15 +76,10 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 				}
 			}
 
-			conv.AddMessage(llms.MessageContent{
-				Role: llms.ChatMessageTypeTool,
-				Parts: []llms.ContentPart{
-					llms.ToolCallResponse{
-						ToolCallID: call.ToolCallID,
-						Name:       call.FunctionCall.Name,
-						Content:    functionCallResult,
-					},
-				},
+			conv.AddToolResponse(call.RequestID, llms.ToolCallResponse{
+				ToolCallID: call.ToolCallID,
+				Name:       call.FunctionCall.Name,
+				Content:    functionCallResult,
 			})
 
 			completionRequests <- ChatCompletionRequest{

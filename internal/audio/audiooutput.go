@@ -21,36 +21,29 @@ type Output struct {
 	Device string
 }
 
-func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.Conversation) (<-chan ResponseChunk, error) {
+func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *model.Conversation) (<-chan struct{}, error) {
 	device, err := outputDevice(o.Device)
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan ResponseChunk, 10)
+	ch := make(chan struct{}, 0)
 
 	go func() {
 		defer close(ch)
 
 		for req := range input {
-			if conv.RequestCounter() > req.RequestID {
-				// Skip playing response if request is outdated (user requested something else)
-				continue
-			}
-
 			select {
 			case <-ctx.Done():
 				continue
 			default:
 			}
 
-			ch <- ResponseChunk{
-				Text: req.Text,
-			}
-
-			err := playAudio(ctx, bytes.NewReader(req.WaveData), device)
-			if err != nil {
-				log.Println("ERROR: play audio:", err)
+			if conv.AddAIResponse(req.RequestID, req.Text) {
+				err := playAudio(ctx, bytes.NewReader(req.WaveData), device)
+				if err != nil {
+					log.Println("ERROR: play audio:", err)
+				}
 			}
 		}
 	}()

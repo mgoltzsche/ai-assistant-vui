@@ -15,13 +15,18 @@ type SpeechGenerator struct {
 	Service *Client
 }
 
-func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Request) <-chan GeneratedSpeech {
+func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Request, conv *model.Conversation) <-chan GeneratedSpeech {
 	ch := make(chan GeneratedSpeech, 10)
 
 	go func() {
 		defer close(ch)
 
 		for req := range requests {
+			if conv.RequestCounter() > req.RequestID {
+				// Skip request if outdated (user requested something else)
+				continue
+			}
+
 			body, err := g.Service.GenerateAudio(ctx, req)
 			if err != nil {
 				log.Println("ERROR: generate speech:", err)

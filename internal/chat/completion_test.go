@@ -40,12 +40,12 @@ func TestSplitIntoSentences(t *testing.T) {
 		{
 			name:     "sentences",
 			input:    "A sentence... a question? Another sentence!",
-			expected: []string{"A sentence...", "a question?", "Another sentence!"},
+			expected: []string{"A sentence... ", "a question? ", "Another sentence!"},
 		},
 		{
 			name:     "sentences with whitespaces",
 			input:    "  A sentence...   a question?  Another sentence!  ",
-			expected: []string{"A sentence...", "a question?", "Another sentence!"},
+			expected: []string{"A sentence... ", "a question? ", "Another sentence!"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

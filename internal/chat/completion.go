@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -56,7 +57,7 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 	go func() {
 		defer close(ch)
 
-		err := c.createChatCompletion(ctx, llm, 0, conv, toolCallSink, ch)
+		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), conv, toolCallSink, ch)
 		if err != nil {
 			log.Println("ERROR: chat completion:", err)
 		}
@@ -80,6 +81,8 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	conv.SetCancelFunc(cancel)
+
 	functions, err := c.Functions.Functions()
 	if err != nil {
 		return fmt.Errorf("get available functions: %w", err)
@@ -90,6 +93,10 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 		llmFunctions[i] = f.Definition()
 	}
 
+	messages := conv.Messages()
+
+	printMessages(messages)
+
 	var buf bytes.Buffer
 
 	// TODO: fix streaming when function support is also enabled.
@@ -98,8 +105,8 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 	// While this doesn't break the app, it increases the response latency significantly.
 
 	resp, err := llm.GenerateContent(ctx,
-		conv.Messages(),
-		llms.WithStreamingFunc(streamFunc(cancel, reqID, conv, &buf, ch)),
+		messages,
+		llms.WithStreamingFunc(c.streamFunc(cancel, reqID, conv, &buf, ch)),
 		//llms.WithTools(tools),
 		llms.WithFunctions(llmFunctions),
 		//llms.WithFunctionCallBehavior(llms.FunctionCallBehaviorAuto),
@@ -108,6 +115,10 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 		llms.WithN(c.MaxTokens),
 	)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+
 		return err
 	}
 
@@ -136,27 +147,21 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 				}
 			}
 
-			conv.AddMessage(llms.MessageContent{
-				Role: llms.ChatMessageTypeAI,
-				Parts: []llms.ContentPart{llms.ToolCall{
-					ID:           callID,
-					Type:         toolCall.Type,
-					FunctionCall: call,
-				}},
-			})
-
-			func() {
-				defer func() {
-					recover()
+			if conv.AddToolCall(reqID, callID, *call) {
+				func() {
+					defer func() {
+						recover()
+					}()
+					toolCallSink <- ToolCallRequest{
+						RequestID:  reqID,
+						ToolCallID: callID,
+						FunctionCall: FunctionCall{
+							Name:      call.Name,
+							Arguments: args,
+						},
+					}
 				}()
-				toolCallSink <- ToolCallRequest{
-					RequestID: reqID,
-					FunctionCall: FunctionCall{
-						Name:      call.Name,
-						Arguments: args,
-					},
-				}
-			}()
+			}
 
 			return nil
 		}
@@ -174,6 +179,21 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 	}
 
 	return nil
+}
+
+var whitespaceRegex = regexp.MustCompile(`\s+`)
+
+func printMessages(messages []llms.MessageContent) {
+	log.Println("Requesting chat completion for message history:")
+	for i, m := range messages {
+		content := model.FormatMessage(m)
+		if len(content) > 120 {
+			content = content[:120] + "..."
+		}
+		content = strings.ReplaceAll(content, "\n", " ")
+		content = whitespaceRegex.ReplaceAllString(content, " ")
+		log.Printf("  %d. %s", i, content)
+	}
 }
 
 // parseFunctionCall parses a single function call from multiple function call JSON arrays.
@@ -235,7 +255,7 @@ type functionCall struct {
 	Arguments string `Json:"arguments"`
 }
 
-func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
+func (c *Completer2) streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
 	lastContent := ""
 	lastSentence := ""
 
@@ -263,6 +283,8 @@ func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation
 
 				lastSentence = sentence
 
+				sentence = c.sanitizeMessage(sentence)
+
 				for _, sentence := range splitIntoSentences(sentence) {
 					ch <- ResponseChunk{
 						RequestID: reqID,
@@ -280,20 +302,9 @@ func streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation
 	}
 }
 
-func (c *Completer2) AddResponsesToConversation(sentences <-chan ResponseChunk, conv *model.Conversation) <-chan struct{} {
-	ch := make(chan struct{})
-
-	go func() {
-		defer close(ch)
-
-		for sentence := range sentences {
-			log.Println("assistant:", strings.TrimSpace(sentence.Text))
-
-			conv.AddMessage(llms.TextParts(llms.ChatMessageTypeAI, strings.TrimSpace(strings.TrimPrefix(sentence.Text, c.StripResponsePrefix))))
-		}
-	}()
-
-	return ch
+func (c *Completer2) sanitizeMessage(msg string) string {
+	msg = strings.TrimSpace(msg)
+	return strings.TrimPrefix(msg, c.StripResponsePrefix)
 }
 
 // splitIntoSentences splits the given message at punctuation marks.
@@ -306,12 +317,16 @@ func splitIntoSentences(msg string) []string {
 	pos := 0
 
 	for i, idx := range m {
-		sentences[i] = strings.TrimSpace(msg[pos:idx[1]])
+		sentences[i] = strings.TrimSpace(msg[pos:idx[1]]) + " "
 		pos = idx[1]
 	}
 
 	if pos < len(msg) && len(strings.TrimSpace(msg[pos:])) > 0 {
 		sentences = append(sentences, msg[pos:])
+	}
+
+	if len(sentences) > 0 {
+		sentences[len(sentences)-1] = strings.TrimSpace(sentences[len(sentences)-1])
 	}
 
 	return sentences
