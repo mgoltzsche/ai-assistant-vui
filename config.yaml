@@ -10,8 +10,8 @@ temperature: 0.7
 wakeWord: Computer
 
 functions:
-- name: expr
-  description: Evaluate a mathematical expression.
+- name: calculator
+  description: Perform a mathematical calculation.
   parameters:
     type: object
     properties:

@@ -91,7 +91,7 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	wakewordFilter := &wakeword.Filter{
 		WakeWord: cfg.WakeWord,
 	}
-	httpClient := &http.Client{Timeout: 45 * time.Second}
+	httpClient := &http.Client{Timeout: 90 * time.Second}
 	transcriber := &stt.Transcriber{
 		Service: &stt.Client{
 			URL:    cfg.ServerURL,

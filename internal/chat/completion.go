@@ -74,6 +74,11 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 			err := c.createChatCompletion(ctx, llm, req.RequestID, fns, conv, toolCallSink, ch)
 			if err != nil {
 				log.Println("ERROR: chat completion:", err)
+
+				ch <- ResponseChunk{
+					RequestID: req.RequestID,
+					Text:      fmt.Sprintf("ERROR: Chat completion API request failed: %s", err),
+				}
 			}
 		}
 	}()
@@ -158,6 +163,10 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 					defer func() {
 						recover()
 					}()
+					ch <- ResponseChunk{
+						RequestID: reqID,
+						Text:      fmt.Sprintf("Let me use my %q tool to answer that.", call.Name),
+					}
 					toolCallSink <- ToolCallRequest{
 						RequestID:  reqID,
 						ToolCallID: callID,

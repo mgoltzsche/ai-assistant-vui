@@ -44,7 +44,7 @@ func preventInfiniteCallLoop(fns []functions.Function, c *model.Conversation) []
 	}
 
 	if len(blockedNames) > 0 {
-		log.Println("WARNING: Detected infinite tool call loop. Blocking tool usage temporarily:", strings.Join(blockedNames, ", "))
+		log.Println("WARNING: Detected infinite tool call loop. Disabling tool temporarily:", strings.Join(blockedNames, ", "))
 	}
 
 	return filtered
