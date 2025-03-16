@@ -196,3 +196,17 @@ func (c *Conversation) Messages() []llms.MessageContent {
 	}
 	return msgs
 }
+
+func (c *Conversation) RequestMessages() []llms.MessageContent {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	msgs := make([]llms.MessageContent, 0, 10)
+	for _, msg := range c.messages {
+		if msg.RequestGeneration == c.requestCounter {
+			msgs = append(msgs, msg.MessageContent)
+		}
+	}
+
+	return msgs
+}

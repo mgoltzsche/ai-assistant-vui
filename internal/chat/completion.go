@@ -57,17 +57,21 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 	go func() {
 		defer close(ch)
 
-		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), conv, toolCallSink, ch)
+		fns := functions.Noop()
+
+		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), fns, conv, toolCallSink, ch)
 		if err != nil {
 			log.Println("ERROR: chat completion:", err)
 		}
+
+		fns = c.Functions
 
 		for req := range requests {
 			if conv.RequestCounter() > req.RequestID {
 				continue // skip outdated request (user requested something else)
 			}
 
-			err := c.createChatCompletion(ctx, llm, req.RequestID, conv, toolCallSink, ch)
+			err := c.createChatCompletion(ctx, llm, req.RequestID, fns, conv, toolCallSink, ch)
 			if err != nil {
 				log.Println("ERROR: chat completion:", err)
 			}
@@ -77,16 +81,18 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 	return ch, nil
 }
 
-func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
+func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, fns functions.FunctionProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	conv.SetCancelFunc(cancel)
 
-	functions, err := c.Functions.Functions()
+	functions, err := fns.Functions()
 	if err != nil {
 		return fmt.Errorf("get available functions: %w", err)
 	}
+
+	functions = preventInfiniteCallLoop(functions, conv)
 
 	llmFunctions := make([]llms.FunctionDefinition, len(functions))
 	for i, f := range functions {

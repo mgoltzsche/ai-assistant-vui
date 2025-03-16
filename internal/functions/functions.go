@@ -24,3 +24,13 @@ func FindByName(name string, functions []Function) (Function, error) {
 
 	return nil, fmt.Errorf("function %q not found", name)
 }
+
+type noop string
+
+func Noop() FunctionProvider {
+	return noop("noop-function-provider")
+}
+
+func (_ noop) Functions() ([]Function, error) {
+	return nil, nil
+}
