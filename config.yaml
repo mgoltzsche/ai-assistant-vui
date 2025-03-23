@@ -25,7 +25,7 @@ functions:
           Numbers are formatted using english decimal notation.
           Operators are as follows: + - * / %.
           Example expression: 6 / 2 + 5
-    required: ["input"]
+    required: ["rationale", "input"]
   image: alpine:3.21
   command: /bin/sh
   args:
@@ -96,6 +96,62 @@ functions:
   args:
   - -euc
   - |
-    ENCODED_TITLE="$(yq eval -n 'env(PARAMETER_QUERY) | @uri')"
-    RESPONSE="$(wget -qO - "https://en.wikipedia.org/w/api.php?format=json&action=query&titles=$ENCODED_TITLE&prop=extracts&explaintext=true")"
+    QUERY="$(yq eval -n 'env(PARAMETER_QUERY) | @uri')"
+    RESPONSE="$(wget -qO - "https://en.wikipedia.org/w/api.php?format=json&action=query&titles=$QUERY&prop=extracts&explaintext=true")"
     echo "$RESPONSE" | yq eval -e '.query.pages.*.extract'
+
+- name: get_volume
+  description: Get the current music volume.
+  parameters:
+    type: object
+    properties:
+      rationale:
+        type: string
+        description: The rationale for choosing this function call with these parameters.
+    required: ["rationale"]
+  # Using yq instead of jq here since official jq image doesn't ship curl/wget
+  image: mikefarah/yq:4
+  command: /bin/sh
+  args:
+  - -euc
+  - |
+    REQUEST='{"jsonrpc": "2.0", "id": 1, "method": "core.mixer.get_volume"}'
+    wget --no-check-certificate -qO /tmp/response \
+      --header='Content-Type: application/json' \
+      --post-data="$REQUEST" \
+      https://kubemate-a33a/mopidy/rpc &&
+    yq eval -e '.result' < /tmp/response 2>/dev/null || \
+      (printf 'Failed to get volume: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
+
+- name: set_volume
+  description: Set the music volume.
+  parameters:
+    type: object
+    properties:
+      rationale:
+        type: string
+        description: The rationale for choosing this function call with these parameters.
+      volume:
+        type: integer
+        format: int32
+        minValue: 0
+        maxValue: 100
+        description: The volume to set. The volume is a percental value between 0 and 100.
+    required: ["rationale", "volume"]
+  # Using yq instead of jq here since official jq image doesn't ship curl/wget
+  image: mikefarah/yq:4
+  command: /bin/sh
+  args:
+  - -euc
+  - |
+    REQUEST="$(yq eval -ne --output-format=json '{"jsonrpc": "2.0", "id": 1,
+      "method": "core.mixer.set_volume",
+      "params": {"volume": env(PARAMETER_VOLUME)}
+    }')"
+    wget --no-check-certificate -qO /tmp/response \
+      --header='Content-Type: application/json' \
+      --post-data="$REQUEST" \
+      https://kubemate-a33a/mopidy/rpc 2>&1 &&
+    yq eval -e '.result' </tmp/response 2>/dev/null >&2 || \
+      (printf 'Failed to set volume: '; yq eval -e '.error.data.message' < /tmp/response 2>/dev/null >&2 || cat /tmp/response; false)
+    echo "The volume is set to $PARAMETER_VOLUME%."
