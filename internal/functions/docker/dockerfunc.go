@@ -72,7 +72,7 @@ func (f *function) Call(params map[string]any) (string, error) {
 	}
 
 	for k, v := range params {
-		env = append(env, fmt.Sprintf("PARAMETER_%s=%s", strings.ToUpper(k), v))
+		env = append(env, fmt.Sprintf("PARAMETER_%s=%v", strings.ToUpper(k), v))
 	}
 
 	cfg := &container.Config{

@@ -165,7 +165,7 @@ func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, 
 					}()
 					ch <- ResponseChunk{
 						RequestID: reqID,
-						Text:      fmt.Sprintf("Let me use my %q tool to answer that.", call.Name),
+						Text:      fmt.Sprintf("Let me use my %q tool...", call.Name),
 					}
 					toolCallSink <- ToolCallRequest{
 						RequestID:  reqID,
@@ -202,8 +202,8 @@ func printMessages(messages []llms.MessageContent) {
 	log.Println("Requesting chat completion for message history:")
 	for i, m := range messages {
 		content := model.FormatMessage(m)
-		if len(content) > 120 {
-			content = content[:120] + "..."
+		if len(content) > 130 {
+			content = content[:130] + "..."
 		}
 		content = strings.ReplaceAll(content, "\n", " ")
 		content = whitespaceRegex.ReplaceAllString(content, " ")
