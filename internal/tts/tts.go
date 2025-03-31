@@ -39,10 +39,7 @@ func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Req
 			}
 
 			ch <- GeneratedSpeech{
-				Message: model.Message{
-					RequestID: req.RequestID,
-					Text:      req.Text,
-				},
+				Message:  req,
 				WaveData: b,
 			}
 		}

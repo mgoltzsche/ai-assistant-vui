@@ -17,9 +17,9 @@ func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests 
 	go func() {
 		defer close(ch)
 
-		for request := range requests {
+		for req := range requests {
 			ch <- ChatCompletionRequest{
-				RequestID: conv.AddUserRequest(request.Text + " "),
+				RequestID: conv.AddUserRequest(req.Text + " "),
 			}
 		}
 	}()

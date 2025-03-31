@@ -39,7 +39,7 @@ func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *
 			default:
 			}
 
-			if conv.AddAIResponse(req.RequestID, req.Text) {
+			if req.UserOnly || conv.AddAIResponse(req.RequestID, req.Text) {
 				err := playAudio(ctx, bytes.NewReader(req.WaveData), device)
 				if err != nil {
 					log.Println("ERROR: play audio:", err)
