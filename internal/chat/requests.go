@@ -19,7 +19,7 @@ func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests 
 
 		for req := range requests {
 			ch <- ChatCompletionRequest{
-				RequestID: conv.AddUserRequest(req.Text + " "),
+				RequestNum: conv.AddUserRequest(req.Text + " "),
 			}
 		}
 	}()

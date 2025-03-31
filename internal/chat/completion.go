@@ -23,7 +23,7 @@ var endOfSentenceRegex = regexp.MustCompile(`(\.|\?|!)+(\s+|$)`)
 type ResponseChunk = model.Message
 
 type ChatCompletionRequest struct {
-	RequestID int64
+	RequestNum int64
 }
 
 type Completer struct {
@@ -67,17 +67,17 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 		fns = c.Functions
 
 		for req := range requests {
-			if conv.RequestCounter() > req.RequestID {
+			if conv.RequestCounter() > req.RequestNum {
 				continue // skip outdated request (user requested something else)
 			}
 
-			err := c.createChatCompletion(ctx, llm, req.RequestID, fns, conv, toolCallSink, ch)
+			err := c.createChatCompletion(ctx, llm, req.RequestNum, fns, conv, toolCallSink, ch)
 			if err != nil {
 				log.Println("ERROR: chat completion:", err)
 
 				ch <- ResponseChunk{
-					RequestID: req.RequestID,
-					Text:      fmt.Sprintf("ERROR: Chat completion API request failed: %s", err),
+					RequestNum: req.RequestNum,
+					Text:       fmt.Sprintf("ERROR: Chat completion API request failed: %s", err),
 				}
 			}
 		}
@@ -86,7 +86,7 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 	return ch, nil
 }
 
-func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, fns functions.FunctionProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
+func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqNum int64, fns functions.FunctionProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -117,7 +117,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 
 	resp, err := llm.GenerateContent(ctx,
 		messages,
-		llms.WithStreamingFunc(c.streamFunc(cancel, reqID, conv, &buf, ch)),
+		llms.WithStreamingFunc(c.streamFunc(cancel, reqNum, conv, &buf, ch)),
 		//llms.WithTools(tools),
 		llms.WithFunctions(llmFunctions),
 		//llms.WithFunctionCallBehavior(llms.FunctionCallBehaviorAuto),
@@ -158,18 +158,18 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 				}
 			}
 
-			if conv.AddToolCall(reqID, callID, *call) {
+			if conv.AddToolCall(reqNum, callID, *call) {
 				func() {
 					defer func() {
 						recover()
 					}()
 					ch <- ResponseChunk{
-						RequestID: reqID,
-						Text:      fmt.Sprintf("Let me use my %q tool...", call.Name),
-						UserOnly:  true,
+						RequestNum: reqNum,
+						Text:       fmt.Sprintf("Let me use my %q tool...", call.Name),
+						UserOnly:   true,
 					}
 					toolCallSink <- ToolCallRequest{
-						RequestID:  reqID,
+						RequestNum: reqNum,
 						ToolCallID: callID,
 						FunctionCall: FunctionCall{
 							Name:      call.Name,
@@ -188,8 +188,8 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 
 		for _, sentence := range splitIntoSentences(msg) {
 			ch <- ResponseChunk{
-				RequestID: reqID,
-				Text:      sentence,
+				RequestNum: reqNum,
+				Text:       sentence,
 			}
 		}
 	}
@@ -271,12 +271,12 @@ type functionCall struct {
 	Arguments string `Json:"arguments"`
 }
 
-func (c *Completer) streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
+func (c *Completer) streamFunc(cancel context.CancelFunc, reqNum int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
 	lastContent := ""
 	lastSentence := ""
 
 	return func(ctx context.Context, chunk []byte) error {
-		if conv.RequestCounter() > reqID {
+		if conv.RequestCounter() > reqNum {
 			// Cancel response stream if request is outdated (user requested something else)
 			cancel()
 			return nil
@@ -303,8 +303,8 @@ func (c *Completer) streamFunc(cancel context.CancelFunc, reqID int64, conv *mod
 
 				for _, sentence := range splitIntoSentences(sentence) {
 					ch <- ResponseChunk{
-						RequestID: reqID,
-						Text:      sentence,
+						RequestNum: reqNum,
+						Text:       sentence,
 					}
 				}
 			}

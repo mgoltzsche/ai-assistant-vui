@@ -12,7 +12,7 @@ import (
 )
 
 type ToolCallRequest struct {
-	RequestID    int64
+	RequestNum   int64
 	ToolCallID   string
 	FunctionCall FunctionCall
 }
@@ -41,7 +41,7 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 
 		for call := range toolCalls {
 			// TODO: skip or not? We cannot skip, unless the initial tool call request AI message is also added to the conversation by the runner.
-			//if conv.RequestCounter() > call.RequestID {
+			//if conv.RequestCounter() > call.RequestNum {
 			//  conf.AddMessage(skipped)
 			//	continue // skip outdated request (user requested something else)
 			//}
@@ -76,14 +76,14 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 				}
 			}
 
-			conv.AddToolResponse(call.RequestID, llms.ToolCallResponse{
+			conv.AddToolResponse(call.RequestNum, llms.ToolCallResponse{
 				ToolCallID: call.ToolCallID,
 				Name:       call.FunctionCall.Name,
 				Content:    functionCallResult,
 			})
 
 			completionRequests <- ChatCompletionRequest{
-				RequestID: call.RequestID,
+				RequestNum: call.RequestNum,
 			}
 		}
 	}()

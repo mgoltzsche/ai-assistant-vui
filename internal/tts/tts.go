@@ -22,7 +22,7 @@ func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Req
 		defer close(ch)
 
 		for req := range requests {
-			if conv.RequestCounter() > req.RequestID {
+			if conv.RequestCounter() > req.RequestNum {
 				// Skip request if outdated (user requested something else)
 				continue
 			}

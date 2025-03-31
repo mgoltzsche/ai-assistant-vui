@@ -18,7 +18,7 @@ type Conversation struct {
 }
 
 type conversationMessage struct {
-	RequestGeneration int64
+	RequestNum int64
 	llms.MessageContent
 }
 
@@ -44,8 +44,8 @@ func FormatMessage(m llms.MessageContent) string {
 func NewConversation(systemPrompt string) *Conversation {
 	messages := make([]conversationMessage, 1, 100)
 	messages[0] = conversationMessage{
-		RequestGeneration: 1,
-		MessageContent:    llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
+		RequestNum:     1,
+		MessageContent: llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
 	}
 
 	return &Conversation{
@@ -76,8 +76,8 @@ func (c *Conversation) AddUserRequest(msg string) int64 {
 	}
 
 	cmsg := conversationMessage{
-		RequestGeneration: c.requestCounter,
-		MessageContent:    llms.TextParts(llms.ChatMessageTypeHuman, msg),
+		RequestNum:     c.requestCounter,
+		MessageContent: llms.TextParts(llms.ChatMessageTypeHuman, msg),
 	}
 
 	log.Println("user request:", strings.TrimSpace(msg))
@@ -88,13 +88,13 @@ func (c *Conversation) AddUserRequest(msg string) int64 {
 	return c.requestCounter
 }
 
-func (c *Conversation) AddAIResponse(generation int64, msg string) bool {
+func (c *Conversation) AddAIResponse(requestNum int64, msg string) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if c.addMessage(conversationMessage{
-		RequestGeneration: generation,
-		MessageContent:    llms.TextParts(llms.ChatMessageTypeAI, msg),
+		RequestNum:     requestNum,
+		MessageContent: llms.TextParts(llms.ChatMessageTypeAI, msg),
 	}) {
 		log.Println("assistant:", strings.TrimSpace(msg))
 		return true
@@ -103,12 +103,12 @@ func (c *Conversation) AddAIResponse(generation int64, msg string) bool {
 	return false
 }
 
-func (c *Conversation) AddToolCall(generation int64, callID string, call llms.FunctionCall) bool {
+func (c *Conversation) AddToolCall(requestNum int64, callID string, call llms.FunctionCall) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if c.addMessage(conversationMessage{
-		RequestGeneration: generation,
+		RequestNum: requestNum,
 		MessageContent: llms.MessageContent{
 			Role: llms.ChatMessageTypeAI,
 			Parts: []llms.ContentPart{llms.ToolCall{
@@ -125,12 +125,12 @@ func (c *Conversation) AddToolCall(generation int64, callID string, call llms.Fu
 	return false
 }
 
-func (c *Conversation) AddToolResponse(generation int64, resp llms.ToolCallResponse) bool {
+func (c *Conversation) AddToolResponse(requestNum int64, resp llms.ToolCallResponse) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	return c.addMessage(conversationMessage{
-		RequestGeneration: generation,
+		RequestNum: requestNum,
 		MessageContent: llms.MessageContent{
 			Role:  llms.ChatMessageTypeTool,
 			Parts: []llms.ContentPart{resp},
@@ -139,7 +139,7 @@ func (c *Conversation) AddToolResponse(generation int64, resp llms.ToolCallRespo
 }
 
 func (c *Conversation) addMessage(msg conversationMessage) bool {
-	if c.requestCounter > msg.RequestGeneration {
+	if c.requestCounter > msg.RequestNum {
 		// ignore response from an outdated request
 		return false
 	}
@@ -149,7 +149,7 @@ func (c *Conversation) addMessage(msg conversationMessage) bool {
 	if len(messages) > 0 && messages[len(messages)-1].Role == msg.Role {
 		// TODO: add whitespace
 		messages[len(messages)-1].Parts = append(messages[len(messages)-1].Parts, msg.Parts...)
-		messages[len(messages)-1].RequestGeneration = msg.RequestGeneration
+		messages[len(messages)-1].RequestNum = msg.RequestNum
 	} else {
 		messages = append(messages, msg)
 	}
@@ -163,7 +163,7 @@ func (c *Conversation) dropPreviousToolCalls() {
 	filtered := make([]conversationMessage, 0, len(c.messages)+1)
 
 	for _, msg := range c.messages {
-		if msg.RequestGeneration == c.requestCounter || msg.Role != llms.ChatMessageTypeTool && toolCallID(msg.MessageContent) == "" {
+		if msg.RequestNum == c.requestCounter || msg.Role != llms.ChatMessageTypeTool && toolCallID(msg.MessageContent) == "" {
 			filtered = append(filtered, msg)
 		}
 	}
@@ -203,7 +203,7 @@ func (c *Conversation) RequestMessages() []llms.MessageContent {
 
 	msgs := make([]llms.MessageContent, 0, 10)
 	for _, msg := range c.messages {
-		if msg.RequestGeneration == c.requestCounter {
+		if msg.RequestNum == c.requestCounter {
 			msgs = append(msgs, msg.MessageContent)
 		}
 	}
