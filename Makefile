@@ -10,8 +10,7 @@ build:
 	docker build --rm -t $(IMAGE) .
 
 run-localai:
-	docker run -ti --rm --network=host --privileged -v `pwd`/models:/build/models localai/localai:v2.26.0-vulkan-ffmpeg-core
-	# To run with GPU support: docker run -ti --rm --network=host --privileged --device=/dev/kfd --device=/dev/dri --security-opt seccomp=unconfined --group-add video -v `pwd`/models:/build/models $(IMAGE)
+	docker run -ti --rm --network=host --privileged -v `pwd`/models:/build/models localai/localai:v2.27.0-vulkan-ffmpeg-core
 
 run-vui: build
 	mkdir -p output
