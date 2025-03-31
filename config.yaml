@@ -5,7 +5,6 @@ vadModelPath: /models/silero_vad.onnx
 sttModel: whisper-1
 chatModel: localai-functioncall-qwen2.5-7b-v0.5
 ttsModel: voice-en-us-amy-low
-#ttsModel: voice-de-kerstin-low
 temperature: 0.7
 wakeWord: Computer
 
@@ -155,3 +154,27 @@ functions:
     yq eval -e '.result' </tmp/response 2>/dev/null >&2 || \
       (printf 'Failed to set volume: '; yq eval -e '.error.data.message' < /tmp/response 2>/dev/null >&2 || cat /tmp/response; false)
     echo "The volume is set to $PARAMETER_VOLUME%."
+
+- name: next_song
+  description: Make the music player play the next song, skipping the one that is currently being played.
+  parameters:
+    type: object
+    properties:
+      rationale:
+        type: string
+        description: The rationale for choosing this function call with these parameters.
+    required: ["rationale"]
+  # Using yq instead of jq here since official jq image doesn't ship curl/wget
+  image: mikefarah/yq:4
+  command: /bin/sh
+  args:
+  - -euc
+  - |
+    REQUEST='{"jsonrpc": "2.0", "id": 1, "method": "core.playback.next"}'
+    wget --no-check-certificate -qO /tmp/response \
+      --header='Content-Type: application/json' \
+      --post-data="$REQUEST" \
+      https://kubemate-a33a/mopidy/rpc &&
+    yq eval -e '.result == null' < /tmp/response 2>/dev/null >/dev/null || \
+      (printf 'Failed to skip the song: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
+    echo Skipped the current song and started playing the next one.

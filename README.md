@@ -1,7 +1,7 @@
 ![AI Assistant VUI logo](https://raw.githubusercontent.com/mgoltzsche/ai-assistant-vui/main/docs/logo.png)
 # AI Assistant VUI
 
-A voice user interface (VUI) to interact with an AI assistant.
+An experimental voice user interface (VUI) to interact with an AI assistant.
 
 It is as a client CLI that connects to an OpenAI API-compatible server (that is served locally by [LocalAI](https://github.com/mudler/LocalAI)).
 To answer a user request it can decide to use tools in form of running configurable, dockerized functions.
