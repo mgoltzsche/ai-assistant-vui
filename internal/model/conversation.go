@@ -82,7 +82,7 @@ func (c *Conversation) AddUserRequest(msg string) int64 {
 
 	log.Println("user request:", strings.TrimSpace(msg))
 
-	c.dropPreviousToolCalls()
+	c.dropPreviousMessages()
 	c.addMessage(cmsg)
 
 	return c.requestCounter
@@ -159,34 +159,16 @@ func (c *Conversation) addMessage(msg conversationMessage) bool {
 	return true
 }
 
-func (c *Conversation) dropPreviousToolCalls() {
+func (c *Conversation) dropPreviousMessages() {
 	filtered := make([]conversationMessage, 0, len(c.messages)+1)
 
 	for _, msg := range c.messages {
-		if msg.RequestNum == c.requestCounter || msg.Role != llms.ChatMessageTypeTool && toolCallID(msg.MessageContent) == "" {
+		if msg.RequestNum < 2 || msg.RequestNum == c.requestCounter {
 			filtered = append(filtered, msg)
 		}
 	}
 
 	c.messages = filtered
-}
-
-func toolCallID(msg llms.MessageContent) string {
-	for _, part := range msg.Parts {
-		if call, ok := part.(llms.ToolCall); ok && call.Type == "function" {
-			return call.ID
-		}
-	}
-	return ""
-}
-
-func toolCallResponseID(msg llms.MessageContent) string {
-	for _, part := range msg.Parts {
-		if resp, ok := part.(llms.ToolCallResponse); ok {
-			return resp.ToolCallID
-		}
-	}
-	return ""
 }
 
 func (c *Conversation) Messages() []llms.MessageContent {
