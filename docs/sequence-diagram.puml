@@ -11,7 +11,7 @@ boundary whisper as "Whisper API\n(Speech-To-Text)"
 control wakewordFilter
 control chat
 control tools
-entity conversation
+entity conversation as "conversation /\nchat history"
 boundary llm as "Conversational LLM"
 
 vui -> audioInput : RecordAudio
@@ -29,12 +29,14 @@ loop each detected voice audio snippet
   alt STT result contains wake word
     wakewordFilter -> conversation : AddUserRequest(msg)
     activate conversation
+    conversation -> conversation : incrementRequestCounter()
+    conversation -> conversation : assign request\nnumber to message
     deactivate conversation
     wakewordFilter -> chat : ChatCompletion()
     deactivate wakewordFilter
     activate chat
     chat -> conversation : GetMessages()
-    chat -> llm : Exchange chat history for AI response:\nPOST /v1/chat/completions
+    chat -> llm : Exchange chat history\nfor AI response:\nPOST /v1/chat/completions
     alt LLM wants to call tool(s)
       loop tool call
         chat -> tools : call tool
@@ -43,13 +45,26 @@ loop each detected voice audio snippet
         deactivate tools
       end
       chat -> conversation : GetMessages()
-      chat -> llm : Exchange chat history for AI response:\nPOST /v1/chat/completions
+      chat -> llm : POST /v1/chat/completions
     end
-    chat -> tts : GenerateAudio(text)
-    deactivate chat
-    activate tts
-    tts -> audioOutput : play generated audio
-    deactivate tts
+    chat -> chat : collect/split response into\na message per sentence
+    note right
+      This is to be able to interrupt the assistant after each sentence.
+    end note
+    loop each response sentence
+      chat -> tts : GenerateAudio(sentence)
+      deactivate chat
+      activate tts
+      alt sentence.RequestNum == conversation.RequestCounter
+        tts -> audioOutput : play generated audio
+        activate audioOutput
+        audioOutput -> conversation : AddAIResponse(sentence)
+        activate conversation
+        deactivate conversation
+        deactivate audioOutput
+      end
+      deactivate tts
+    end
   end
 end
 
