@@ -89,9 +89,8 @@ For instance you can ask "Computer, what's the capital of Germany?"
 
 The application is written in Go, leveraging its static typing and concurrency features.
 
-TODO: explain the audio pipeline stages and how the user can interrupt the AI. sequence diagram?!
-
-TODO: explain how the context is stored, what the limitations are and how that could be improved.
+Schematic sequence diagram:
+![Sequence diagram](https://raw.githubusercontent.com/mgoltzsche/ai-assistant-vui/main/docs/sequence-diagram.png)
 
 ## Limitations
 

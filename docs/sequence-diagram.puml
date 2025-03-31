@@ -1,0 +1,56 @@
+@startuml
+
+actor user
+boundary vui
+control audioInput as "Microphone"
+control audioOutput as "Speakers"
+control vad as "Silero VAD\n(Voice Activity Detection)"
+control stt
+control tts
+boundary whisper as "Whisper API\n(Speech-To-Text)"
+control wakewordFilter
+control chat
+control tools
+entity conversation
+boundary llm as "Conversational LLM"
+
+vui -> audioInput : RecordAudio
+user -> vui : talks \ \nvoice command
+vui -\ vad : DetectVoiceActivity
+loop each detected voice audio snippet
+  vad -\ stt : Transcribe(audio)
+  activate stt
+  stt -> whisper : Speech-To-Text (STT):\nPOST /v1/audio/transcriptions
+  activate whisper
+  deactivate whisper
+  stt -> wakewordFilter : FilterByWakeWord(text)
+  deactivate stt
+  activate wakewordFilter
+  alt STT result contains wake word
+    wakewordFilter -> conversation : AddUserRequest(msg)
+    activate conversation
+    deactivate conversation
+    wakewordFilter -> chat : ChatCompletion()
+    deactivate wakewordFilter
+    activate chat
+    chat -> conversation : GetMessages()
+    chat -> llm : Exchange chat history for AI response:\nPOST /v1/chat/completions
+    alt LLM wants to call tool(s)
+      loop tool call
+        chat -> tools : call tool
+        activate tools
+        tools -> conversation : AddToolResponse(result)
+        deactivate tools
+      end
+      chat -> conversation : GetMessages()
+      chat -> llm : Exchange chat history for AI response:\nPOST /v1/chat/completions
+    end
+    chat -> tts : GenerateAudio(text)
+    deactivate chat
+    activate tts
+    tts -> audioOutput : play generated audio
+    deactivate tts
+  end
+end
+
+@enduml
