@@ -26,7 +26,7 @@ type ChatCompletionRequest struct {
 	RequestID int64
 }
 
-type Completer2 struct {
+type Completer struct {
 	ServerURL           string
 	Model               string
 	Temperature         float64
@@ -41,7 +41,7 @@ type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan ResponseChunk, error) {
+func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan ResponseChunk, error) {
 	llm, err := openai.New(
 		openai.WithHTTPClient(c.HTTPClient),
 		openai.WithBaseURL(c.ServerURL+"/v1"),
@@ -86,7 +86,7 @@ func (c *Completer2) RunChatCompletions(ctx context.Context, requests <-chan Cha
 	return ch, nil
 }
 
-func (c *Completer2) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, fns functions.FunctionProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
+func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqID int64, fns functions.FunctionProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -271,7 +271,7 @@ type functionCall struct {
 	Arguments string `Json:"arguments"`
 }
 
-func (c *Completer2) streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
+func (c *Completer) streamFunc(cancel context.CancelFunc, reqID int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
 	lastContent := ""
 	lastSentence := ""
 
@@ -318,7 +318,7 @@ func (c *Completer2) streamFunc(cancel context.CancelFunc, reqID int64, conv *mo
 	}
 }
 
-func (c *Completer2) sanitizeMessage(msg string) string {
+func (c *Completer) sanitizeMessage(msg string) string {
 	msg = strings.TrimSpace(msg)
 	return strings.TrimPrefix(msg, c.StripResponsePrefix)
 }

@@ -103,7 +103,7 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	runner := &chat.FunctionRunner{
 		Functions: functions,
 	}
-	chatCompleter := &chat.Completer2{
+	chatCompleter := &chat.Completer{
 		ServerURL:           cfg.ServerURL,
 		Model:               cfg.ChatModel,
 		Temperature:         cfg.Temperature,
@@ -144,7 +144,7 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
 	completionRequests = chat.MergeCompletionRequests(completionRequests, toolResults)
 
-	responses, err := chatCompleter.RunChatCompletions(ctx, completionRequests, conversation, toolCallSink)
+	responses, err := chatCompleter.ChatCompletion(ctx, completionRequests, conversation, toolCallSink)
 	if err != nil {
 		return err
 	}
