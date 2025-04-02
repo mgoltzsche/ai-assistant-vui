@@ -99,6 +99,28 @@ functions:
     RESPONSE="$(wget -qO - "https://en.wikipedia.org/w/api.php?format=json&action=query&titles=$QUERY&prop=extracts&explaintext=true")"
     echo "$RESPONSE" | yq eval -e '.query.pages.*.extract'
 
+- name: news
+  description: Obtain the latest news about a given topic by scraping the New York Times website.
+  parameters:
+    type: object
+    properties:
+      rationale:
+        type: string
+        description: The rationale for choosing this function call with these parameters.
+      topic:
+        type: string
+        description: The topic to find news about.
+    required: ["rationale"]
+  image: alpine/lynx:2.9.2
+  command: /bin/sh
+  args:
+  - -euc
+  - |
+    #RESPONSE="$(wget -qO - "https://serpapi.com/search.json?engine=duckduckgo_news&q=$PARAMETER_TOPIC&kl=us-en")"
+    #echo "$RESPONSE" | grep -E '^ +"link": ".+' | sed -Ee 's/^ +"link": "//' -e 's/",$//' | xargs lynx --dump --nonumbers --nolist --display_charset=utf-8 --stderr || true
+    RESPONSE="$(lynx --dump --nonumbers --nolist --display_charset=utf-8 --stderr "https://www.nytimes.com/search?query=$PARAMETER_TOPIC")"
+    echo "$RESPONSE" | sed 's/PRINT EDITION//g'
+
 - name: get_volume
   description: Get the current music volume.
   parameters:
