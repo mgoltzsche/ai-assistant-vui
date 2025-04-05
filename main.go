@@ -15,6 +15,7 @@ import (
 	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions/docker"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/soundgen"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tts"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vad"
@@ -120,6 +121,9 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 			Client: httpClient,
 		},
 	}
+	soundGen := &soundgen.Generator{
+		SampleRate: 16000,
+	}
 
 	go func() {
 		<-ctx.Done()
@@ -140,9 +144,14 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 
 	transcriptions := transcriber.Transcribe(ctx, audioInput)
 	userRequests := wakewordFilter.FilterByWakeWord(transcriptions)
-	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequests, conversation)
+	notificationSounds, notificationSink, err := soundGen.Notify(conversation)
+	if err != nil {
+		return err
+	}
+
+	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequests, notificationSink, conversation)
 	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
-	completionRequests = chat.MergeCompletionRequests(completionRequests, toolResults)
+	completionRequests = chat.MergeChannels(completionRequests, toolResults)
 
 	responses, err := chatCompleter.ChatCompletion(ctx, completionRequests, conversation, toolCallSink)
 	if err != nil {
@@ -151,7 +160,9 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 
 	speeches := speechGen.GenerateAudio(ctx, responses, conversation)
 
-	done, err := audioOutput.PlayAudio(ctx, speeches, conversation)
+	playbackRequests := chat.MergeChannels(speeches, notificationSounds)
+
+	done, err := audioOutput.PlayAudio(ctx, playbackRequests, conversation)
 	if err != nil {
 		return err
 	}

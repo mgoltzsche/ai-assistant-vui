@@ -4,8 +4,8 @@ import (
 	"sync"
 )
 
-func MergeCompletionRequests(sources ...<-chan ChatCompletionRequest) <-chan ChatCompletionRequest {
-	ch := make(chan ChatCompletionRequest, 10)
+func MergeChannels[T any](sources ...<-chan T) <-chan T {
+	ch := make(chan T, 10)
 	wg := &sync.WaitGroup{}
 
 	wg.Add(len(sources))
