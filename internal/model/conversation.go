@@ -172,11 +172,14 @@ func (c *Conversation) dropPreviousMessages() {
 }
 
 func (c *Conversation) Messages() []llms.MessageContent {
-	msgs := make([]llms.MessageContent, len(c.messages))
-	for i, msg := range c.messages {
-		msgs[i] = msg.MessageContent
+	msgs := c.messages
+	nsgContents := make([]llms.MessageContent, len(msgs))
+
+	for i, msg := range msgs {
+		nsgContents[i] = msg.MessageContent
 	}
-	return msgs
+
+	return nsgContents
 }
 
 func (c *Conversation) RequestMessages() []llms.MessageContent {
