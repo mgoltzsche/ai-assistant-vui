@@ -163,10 +163,16 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 					defer func() {
 						recover()
 					}()
-					ch <- ResponseChunk{
-						RequestNum: reqNum,
-						Text:       fmt.Sprintf("Let me use my %q tool...", call.Name),
-						UserOnly:   true,
+					if rationale, ok := args["rationale"]; ok && rationale != "" {
+						info := fmt.Sprintf("%s Let me use my %q tool.", rationale, call.Name)
+
+						for _, sentence := range splitIntoSentences(info) {
+							ch <- ResponseChunk{
+								RequestNum: reqNum,
+								Text:       sentence,
+								UserOnly:   true,
+							}
+						}
 					}
 					toolCallSink <- ToolCallRequest{
 						RequestNum: reqNum,
