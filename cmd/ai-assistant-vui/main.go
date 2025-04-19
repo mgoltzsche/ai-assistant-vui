@@ -3,23 +3,15 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
-	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/gordonklaus/portaudio"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/audio"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/functions/docker"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/soundgen"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/tts"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vad"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/wakeword"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/vui"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
 )
 
@@ -29,7 +21,7 @@ import (
 func main() {
 	configFile := "/etc/ai-assistant-vui/config.yaml"
 	cfg, err := config.FromFile(configFile)
-	configFlag := &ConfigFlag{File: configFile, Config: &cfg}
+	configFlag := &config.Flag{File: configFile, Config: &cfg}
 
 	flag.Var(configFlag, "config", "Path to the configuration file")
 	flag.StringVar(&cfg.ServerURL, "server-url", cfg.ServerURL, "URL pointing to the OpenAI API server that runs the LLM")
@@ -55,6 +47,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	go func() {
+		<-ctx.Done()
+		log.Println("terminating")
+	}()
+
 	err = runAudioPipeline(ctx, cfg)
 	if err != nil {
 		log.Fatal(err)
@@ -62,19 +59,6 @@ func main() {
 }
 
 func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
-	systemPrompt := fmt.Sprintf(`You are a helpful assistant.
-		Your name is %[1]s.
-		Keep your responses short and concise.
-		You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
-		When the user tells you to be quiet, you should answer with "Okay".
-		However, next time the user says something, you should engage in the conversation again.
-		Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
-		`, cfg.WakeWord)
-	//systemPrompt := "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!"
-	conversation := model.NewConversation(systemPrompt)
-	functions := &docker.Functions{
-		FunctionDefinitions: cfg.Functions,
-	}
 	audioDevice := &audio.Input{
 		Device:      cfg.InputDevice,
 		SampleRate:  16000,
@@ -89,46 +73,6 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	detector := &vad.Detector{
 		ModelPath: cfg.VADModelPath,
 	}
-	wakewordFilter := &wakeword.Filter{
-		WakeWord: cfg.WakeWord,
-	}
-	httpClient := &http.Client{Timeout: 90 * time.Second}
-	transcriber := &stt.Transcriber{
-		Service: &stt.Client{
-			URL:    cfg.ServerURL,
-			Model:  cfg.STTModel,
-			Client: httpClient,
-		},
-	}
-	requester := &chat.Requester{}
-	runner := &chat.FunctionRunner{
-		Functions: functions,
-	}
-	chatCompleter := &chat.Completer{
-		ServerURL:           cfg.ServerURL,
-		Model:               cfg.ChatModel,
-		Temperature:         cfg.Temperature,
-		FrequencyPenalty:    1.5,
-		MaxTokens:           0,
-		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
-		HTTPClient:          httpClient,
-		Functions:           functions,
-	}
-	speechGen := &tts.SpeechGenerator{
-		Service: &tts.Client{
-			URL:    cfg.ServerURL,
-			Model:  cfg.TTSModel,
-			Client: httpClient,
-		},
-	}
-	soundGen := &soundgen.Generator{
-		SampleRate: 16000,
-	}
-
-	go func() {
-		<-ctx.Done()
-		log.Println("terminating")
-	}()
 
 	audioInput, err := audioDevice.RecordAudio(ctx)
 	if err != nil {
@@ -142,25 +86,10 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 		}
 	}
 
-	transcriptions := transcriber.Transcribe(ctx, audioInput)
-	userRequests := wakewordFilter.FilterByWakeWord(transcriptions)
-	notificationSounds, notificationSink, err := soundGen.Notify(conversation)
+	playbackRequests, conversation, err := vui.AudioPipeline(ctx, cfg, audioInput)
 	if err != nil {
 		return err
 	}
-
-	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequests, notificationSink, conversation)
-	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
-	completionRequests = chat.MergeChannels(completionRequests, toolResults)
-
-	responses, err := chatCompleter.ChatCompletion(ctx, completionRequests, conversation, toolCallSink)
-	if err != nil {
-		return err
-	}
-
-	speeches := speechGen.GenerateAudio(ctx, responses, conversation)
-
-	playbackRequests := chat.MergeChannels(speeches, notificationSounds)
 
 	done, err := audioOutput.PlayAudio(ctx, playbackRequests, conversation)
 	if err != nil {
@@ -192,27 +121,3 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	}
 	return nil
 }*/
-
-type ConfigFlag struct {
-	File   string
-	Config *config.Configuration
-	IsSet  bool
-}
-
-func (f *ConfigFlag) Set(path string) error {
-	f.File = path
-
-	cfg, err := config.FromFile(path)
-	if err != nil {
-		return err
-	}
-
-	*f.Config = cfg
-	f.IsSet = true
-
-	return nil
-}
-
-func (f *ConfigFlag) String() string {
-	return f.File
-}

@@ -3,11 +3,15 @@
 
 An experimental voice user interface (VUI) to interact with an AI assistant.
 
-It is as a client CLI that connects to an OpenAI API-compatible server (that is served locally by [LocalAI](https://github.com/mudler/LocalAI)).
+It is as a client of an OpenAI API-compatible server (that is served locally by [LocalAI](https://github.com/mudler/LocalAI)).
 To answer a user request it can decide to use tools in form of running configurable, dockerized functions.
 
+It comes in two flavours:
+* A web app and audio streaming API in plain Go for cross-platform usage and central context storage.
+* A terminal application that directly accesses audio devices via [portaudio](https://github.com/PortAudio/portaudio) - built for Linux only.
+
 For voice activity detection (VAD) [silero-vad](https://github.com/snakers4/silero-vad) is built into the client.
-For chat completion, speech-to-text (STT) and text-to-speech (TTS) capabilities the client leverages the API server.
+For chat completion, speech-to-text (STT) and text-to-speech (TTS) capabilities the OpenAI API-compatible server is used.
 In order to detect whether the AI assistant is addressed, a wake word can be configured.
 Though, wake word support is implemented by matching the STT (whisper) output string against the wake word, requiring all voice communication to be STT processed, at least for now.
 
@@ -59,21 +63,33 @@ git clone https://github.com/mgoltzsche/ai-assistant-vui.git
 cd ai-assistant-vui
 ```
 
-To build the Linux container image, run the following command within the project's root directory (requires [Docker](https://docs.docker.com/engine/install/) to be installed):
+To build the server Linux container image, run the following command within the project's root directory (requires [Docker](https://docs.docker.com/engine/install/) to be installed):
 ```sh
-make
+make build-server
+```
+
+Alternatively, to build the terminal app Linux container image, run the following command within the project's root directory (requires [Docker](https://docs.docker.com/engine/install/) to be installed):
+```sh
+make build-vui
 ```
 
 ## Run
 
-1. Start the [LocalAI](https://github.com/mudler/LocalAI) API server (LLM server) by running the following within the project's root directory:
+1) Start the [LocalAI](https://github.com/mudler/LocalAI) API server (LLM server) by running the following within the project's root directory:
 ```sh
 make run-localai
 ```
 
-2. Browse the LocalAI web GUI at [http://127.0.0.1:8080/browse/](http://127.0.0.1:8080/browse/) and search and install the models you want to use. When using the [default AI Assistant VUI](./config.yaml) configuration, you need to install `whisper-1` (STT), `localai-functioncall-qwen2.5-7b-v0.5` (chat) and `voice-en-us-amy-low` (TTS).
+2) Browse the LocalAI web GUI at [http://127.0.0.1:8080/browse/](http://127.0.0.1:8080/browse/) and search and install the models you want to use. When using the [default AI Assistant VUI](./config.yaml) configuration, you need to install `whisper-1` (STT), `localai-functioncall-qwen2.5-7b-v0.5` (chat) and `voice-en-us-amy-low` (TTS).
 
-3. Run the VUI (within another terminal):
+3a) Run the server (within another terminal):
+```sh
+make run-server
+```
+Now you can browse the web app at [http://127.0.0.1:9090](http://127.0.0.1:9090) to talk to the AI assistant.
+
+
+3b) Alternatively, run the VUI (within another terminal):
 ```sh
 make run-vui INPUT_DEVICE="KLIM Talk" OUTPUT_DEVICE="ALC1220 Analog"
 ```
@@ -97,20 +113,17 @@ Schematic sequence diagram:
 * The wake word must be recognized by the whisper model - this could be improved potentially using a specialized wake word model.
 * Context size and storage:
   * To keep the context size minimal and speed up inference, only the last user request corresponding AI response and tool results are kept within the chat history - otherwise the context size is quickly exceeded.
-  * The chat history is currently stored in-memory only and is therefore lost when restarting the application.
 * Due to a LocalAI LLM bug function calls are often repeated infinitely - this is detected and prevented after the 2nd call.
-* Audio device usage: The container does not work with pulseaudio but ALSA and therefore requires no other application to use the same audio devices it uses.
+* Audio device usage: The terminal app container does not work with pulseaudio but ALSA and therefore requires no other application to use the same audio devices it uses - alternatively, the web app can be used.
 * Other people can also give the AI commands (e.g. somebody on the street shouting through the window) - voice recognition could protect against that.
 
 ## Roadmap
 
 * Context size and storage:
   * Chat history retention: Detect when the maximum context size would be exceeded and delete old messages only in that case, starting with the first user request and assistant response.
-  * To support multiple rooms and a client for each as well as remote access, the context/conversation history could be stored on a (local) server.
   * Add Retrieval-Augmented Generation (RAG) support to kind of support an infinite context size: write the chat history (and other personal information) into a vector database, query it for every user request to find related information and add it to the message history before sending it to the chat completion endpoint.
 * Prevent function call repetition.
 * Add a wake word engine in order to save energy/STT API requests.
-* To improve compatibility, it would be good to make the container connect to pulseaudio.
 * Authentication via voice recognition to make the assistant aware of who is talking and to protect against other people commanding the assistant.
 
 ## Credits

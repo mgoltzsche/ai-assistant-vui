@@ -25,7 +25,7 @@ func (d *Detector) DetectVoiceActivity(input <-chan audio.Buffer) (<-chan audio.
 		SpeechPadMs:          0,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create silero vad: %w", err)
+		return input, fmt.Errorf("create silero vad: %w", err)
 	}
 
 	go func() {

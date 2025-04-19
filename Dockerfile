@@ -32,14 +32,14 @@ RUN go mod download
 ARG ONNXRUNTIME_VERSION
 COPY --from=onnxruntime /onnxruntime/build/Linux/Release/libonnxruntime.so* /usr/local/lib/onnxruntime/
 COPY --from=onnxruntime /onnxruntime/include /usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include
-COPY main.go /build/
+COPY cmd/ai-assistant-vui /build/cmd/ai-assistant-vui
 COPY internal /build/internal
 COPY pkg /build/pkg
 ENV CGO_ENABLED=1
 ENV C_INCLUDE_PATH="/usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include/onnxruntime/core/session" \
 	LIBRARY_PATH="/usr/local/lib/onnxruntime" \
 	LD_RUN_PATH="/usr/local/lib/onnxruntime"
-RUN go build -o ai-assistant-vui .
+RUN go build -o ai-assistant-vui ./cmd/ai-assistant-vui
 
 
 FROM debian:12-slim

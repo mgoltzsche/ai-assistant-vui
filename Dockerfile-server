@@ -1,0 +1,22 @@
+FROM golang:1.24.2-alpine3.21 AS server
+COPY go.mod go.sum /build/
+WORKDIR /build
+RUN go mod download
+COPY cmd/ai-assistant-vui-server /build/cmd/ai-assistant-vui-server
+COPY internal /build/internal
+COPY pkg /build/pkg
+ENV CGO_ENABLED=0
+RUN go build -o ai-assistant-vui-server -ldflags '-s -w -extldflags "-static"' ./cmd/ai-assistant-vui-server
+
+FROM node:23-alpine3.21 AS ui
+COPY ui/package.json ui/package-lock.json /ui/
+WORKDIR /ui
+RUN npm install
+COPY ui /ui
+RUN npm run build
+
+FROM alpine:3.21
+COPY --from=server /build/ai-assistant-vui-server /
+COPY config.yaml /etc/ai-assistant-vui/config.yaml
+COPY --from=ui /ui/dist /var/lib/ai-assistant-vui/ui
+ENTRYPOINT ["/ai-assistant-vui-server"]

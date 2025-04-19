@@ -105,29 +105,34 @@ func playAudio(ctx context.Context, wavFile io.ReadSeeker, device *portaudio.Dev
 	startTime := time.Now()
 
 	for {
-		n, err := decoder.PCMBuffer(&buffer)
+		n, _ := decoder.PCMBuffer(&buffer)
 		if n == 0 {
 			break // EOF
 		}
+
 		for i, sample := range buffer.Data {
 			out[i] = int16(sample)
 		}
+
 		if n < inputBufferSize { // zero-pad the buffer after short chunk
 			for i := n; i < inputBufferSize; i++ {
 				out[i] = 0
 			}
 		}
+
 		resampledOut = resampleInt16(out, int(decoder.SampleRate), int(device.DefaultSampleRate))
 		if err != nil {
 			return fmt.Errorf("read chunk from audio stream: %w", err)
 		}
-		err = stream.Write()
+
+		err := stream.Write()
 		if err != nil {
 			// This happens occasionally for some reason.
 			// It doesn't impact the audio playback significantly as long as we're not failing here.
 			// TODO: get to the bottom of this and fix it!
 			log.Println("WARNING: play audio: write chunk:", err)
 		}
+
 		select {
 		case <-ctx.Done():
 			return nil

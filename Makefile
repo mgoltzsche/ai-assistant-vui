@@ -1,20 +1,34 @@
-IMAGE?=ai-assistant-vui
+CLI_IMAGE?=ai-assistant-vui
+SERVER_IMAGE?=ai-assistant-vui-server
 
 INPUT_DEVICE=KLIM Talk
 OUTPUT_DEVICE=ALC1220 Analog
 
+all: help
 
-all: build
+##@ Build
 
-build:
-	docker build --rm -t $(IMAGE) .
+build-vui: ## Build the CLI container.
+	docker build --rm -t $(CLI_IMAGE) .
 
-run-localai:
+build-server: ## Build the web API server container.
+	docker build --rm -t $(SERVER_IMAGE) -f Dockerfile-server .
+
+run-localai: ## Run the LocalAI container.
 	docker run -ti --rm --network=host --privileged -v `pwd`/models:/build/models localai/localai:v2.27.0-vulkan-ffmpeg-core
 
-run-vui: build
-	mkdir -p output
-	docker run --rm --privileged --network=host -v /var/run/docker.sock:/var/run/docker.sock $(IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
+run-vui: build-vui ## Run the command line VUI.
+	docker run --rm --privileged --network=host -v /var/run/docker.sock:/var/run/docker.sock $(CLI_IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
 
-render-diagrams:
+run-server: build-server ## Run the VUI web API server.
+	docker run --rm --network=host -v /var/run/docker.sock:/var/run/docker.sock -v "`pwd`/ui/dist:/var/lib/ai-assistant-vui/ui" $(SERVER_IMAGE)
+
+##@ Development
+
+render-diagrams: ## Render PNGs from PlantUML diagrams.
 	docker run --rm -v "`pwd`/docs:/data" plantuml/plantuml:1.2025 *.puml
+
+##@ General
+
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)

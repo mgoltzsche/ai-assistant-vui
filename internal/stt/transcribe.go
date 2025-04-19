@@ -32,28 +32,15 @@ func (t *Transcriber) Transcribe(ctx context.Context, input <-chan audio.Buffer)
 		defer close(ch)
 
 		for audioBuffer := range input {
-			wavFile := &writerseeker.WriterSeeker{}
-			encoder := wav.NewEncoder(wavFile, 16000, 16, 1, 1)
-
-			if err := encoder.Write(audioBuffer.AsIntBuffer()); err != nil {
-				log.Println(fmt.Errorf("encoder write buffer: %w", err))
-				return
-			}
-
-			if err := encoder.Close(); err != nil {
-				log.Println(fmt.Errorf("encoder close: %w", err))
-				return
-			}
-
-			wavData, err := io.ReadAll(wavFile.Reader())
+			riffWav, err := audioBufferToRiffWav(audioBuffer)
 			if err != nil {
-				log.Println(fmt.Errorf("reading file into memory: %w", err))
+				log.Println("ERROR: transcribe:", err)
 				return
 			}
 
-			result, err := t.Service.Transcribe(ctx, wavData)
+			result, err := t.Service.Transcribe(ctx, riffWav)
 			if err != nil {
-				log.Println(fmt.Errorf("failed to transcribe: %w", err))
+				log.Println("ERROR: transcribe:", err)
 				return
 			}
 
@@ -66,4 +53,24 @@ func (t *Transcriber) Transcribe(ctx context.Context, input <-chan audio.Buffer)
 	}()
 
 	return ch
+}
+
+func audioBufferToRiffWav(buffer audio.Buffer) ([]byte, error) {
+	wavFile := &writerseeker.WriterSeeker{}
+	encoder := wav.NewEncoder(wavFile, 16000, 16, 1, 1)
+
+	if err := encoder.Write(buffer.AsIntBuffer()); err != nil {
+		return nil, fmt.Errorf("encoder write buffer: %w", err)
+	}
+
+	if err := encoder.Close(); err != nil {
+		return nil, fmt.Errorf("encoder close: %w", err)
+	}
+
+	riffWav, err := io.ReadAll(wavFile.Reader())
+	if err != nil {
+		return nil, fmt.Errorf("reading wav into memory: %w", err)
+	}
+
+	return riffWav, nil
 }

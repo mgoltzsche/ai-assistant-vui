@@ -164,9 +164,10 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 						recover()
 					}()
 					if rationale, ok := args["rationale"]; ok && rationale != "" {
-						info := fmt.Sprintf("%s Let me use my %q tool.", rationale, call.Name)
+						infos := splitIntoSentences(fmt.Sprintf("%v", rationale))
+						infos = append(infos, fmt.Sprintf("Let me use my %q tool.", call.Name))
 
-						for _, sentence := range splitIntoSentences(info) {
+						for _, sentence := range infos {
 							ch <- ResponseChunk{
 								RequestNum: reqNum,
 								Text:       sentence,
