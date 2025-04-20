@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-audio/audio"
@@ -46,17 +47,42 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 
 			c.Publish(buf)
 		case http.MethodGet:
+			raw := req.Header.Get("Accept") == "audio/x-raw"
+			bufferDurationMsStr := req.Header.Get("X-Buffer-Duration-Ms")
+			// The client-side buffer duration is used to pad the stream with zeros after a speech.
+			// This is to make the client play the speech immediately
+			// instead of delaying playback until there is more data.
+			bufferDurationMs := uint64(1250)
 			h := w.Header()
 
-			//h.Set("Content-Type", "audio/pcm;rate=16000;bits=16;channels=1;encoding=signed-int;big-endian=false")
+			if bufferDurationMsStr != "" {
+				bufferDurationMs, err = strconv.ParseUint(bufferDurationMsStr, 10, 32)
+				if err != nil {
+					err = fmt.Errorf("invalid X-Buffer-Duration-Ms header value provided: %w", err)
+					log.Println("WARNING:", err)
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+			}
+
+			if raw {
+				h.Set("Content-Type", "audio/x-raw;rate=16000;bits=16;channels=1;encoding=signed-int;big-endian=false")
+			} else {
+				h.Set("Content-Type", "audio/wav")
+			}
+
 			h.Set("Content-Type", "audio/wav")
 			h.Set("Transfer-Encoding", "chunked")
+			h.Set("X-Accel-Buffering", "no") // tell reverse proxy not to buffer
+
+			// Set headers to prevent the client from caching
 			h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			h.Set("Pragma", "no-cache")
 			h.Set("Expires", "0")
+
 			w.WriteHeader(http.StatusOK)
 
-			err = streamAudio(req.Context(), c, w)
+			err = streamAudio(req.Context(), c, raw, bufferDurationMs, w)
 			if err != nil {
 				log.Println("WARNING: failed to stream audio:", err)
 			}
@@ -92,17 +118,20 @@ func readAudio(ctx context.Context, reader io.Reader) (audio.Buffer, error) {
 	return buffer, nil
 }
 
-func streamAudio(ctx context.Context, c channel.Subscriber, w io.Writer) error {
+func streamAudio(ctx context.Context, c channel.Subscriber, raw bool, bufferDurationMs uint64, w io.Writer) error {
 	s := c.Subscribe(ctx)
 	defer s.Stop()
 
-	err := sendWavStreamHeader(w)
-	if err != nil {
-		return fmt.Errorf("writing wav header: %w", err)
+	if !raw {
+		err := sendWavStreamHeader(w)
+		if err != nil {
+			return fmt.Errorf("writing wav header: %w", err)
+		}
 	}
 
 	ch := s.ResultChan()
 	flushed := false
+	var err error
 
 	for {
 		if flushed {
@@ -132,7 +161,7 @@ func streamAudio(ctx context.Context, c channel.Subscriber, w io.Writer) error {
 				return fmt.Errorf("copy audio into stream: %w", err)
 			}
 		case <-time.After(50 * time.Millisecond):
-			err = forceFlush(w)
+			err = forceFlush(w, bufferDurationMs)
 			if err != nil {
 				return fmt.Errorf("force flush audio stream: %w", err)
 			}
@@ -231,7 +260,7 @@ func copyAudio(ctx context.Context, w io.Writer, reader io.ReadSeeker) error {
 	return nil
 }
 
-func forceFlush(w io.Writer) error {
+func forceFlush(w io.Writer, clientBufferDurationMs uint64) error {
 	buffer := audio.IntBuffer{
 		Format: &audio.Format{
 			SampleRate:  16000,
@@ -241,8 +270,7 @@ func forceFlush(w io.Writer) error {
 	}
 
 	// Add padding to fill the client buffer to make it play immediately
-	padMs := 1200
-	buffer.Data = make([]int, buffer.Format.SampleRate*padMs/1000)
+	buffer.Data = make([]int, buffer.Format.SampleRate*int(clientBufferDurationMs)/1000)
 	//inputBufferSize := 512 * 9
 	//buffer.Data = make([]int, 4*inputBufferSize)
 	err := writePCMStream(&buffer, w)
@@ -293,7 +321,7 @@ func generateWavHeader(sampleRate, bitDepth, channels int) ([]byte, error) {
 	buffer := &audio.IntBuffer{
 		Format:         &audio.Format{SampleRate: sampleRate, NumChannels: channels},
 		SourceBitDepth: bitDepth,
-		Data:           []int{}, // To generate headers with length 0 to make streaming work
+		Data:           []int{},
 	}
 
 	if err := encoder.Write(buffer); err != nil {
