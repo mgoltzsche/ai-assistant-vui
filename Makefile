@@ -15,7 +15,7 @@ build-server: ## Build the web API server container.
 	docker build --rm -t $(SERVER_IMAGE) -f Dockerfile-server .
 
 run-localai: ## Run the LocalAI container.
-	docker run -ti --rm --network=host --privileged -v `pwd`/models:/build/models localai/localai:v2.27.0-vulkan-ffmpeg-core
+	docker run -ti --rm --network=host --privileged -v `pwd`/models:/build/models localai/localai:v2.28.0-vulkan-ffmpeg-core
 
 run-vui: build-vui ## Run the command line VUI.
 	docker run --rm --privileged --network=host -v /var/run/docker.sock:/var/run/docker.sock $(CLI_IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
