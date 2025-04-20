@@ -9,8 +9,10 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/go-audio/audio"
 	"github.com/go-audio/wav"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/channel"
@@ -46,49 +48,10 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 			}
 
 			c.Publish(buf)
-		case http.MethodGet:
-			raw := req.Header.Get("Accept") == "audio/x-raw"
-			bufferDurationMsStr := req.Header.Get("X-Buffer-Duration-Ms")
-			// The client-side buffer duration is used to pad the stream with zeros after a speech.
-			// This is to make the client play the speech immediately
-			// instead of delaying playback until there is more data.
-			bufferDurationMs := uint64(1250)
-			h := w.Header()
-
-			if bufferDurationMsStr != "" {
-				bufferDurationMs, err = strconv.ParseUint(bufferDurationMsStr, 10, 32)
-				if err != nil {
-					err = fmt.Errorf("invalid X-Buffer-Duration-Ms header value provided: %w", err)
-					log.Println("WARNING:", err)
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-			}
-
-			if raw {
-				h.Set("Content-Type", "audio/x-raw;rate=16000;bits=16;channels=1;encoding=signed-int;big-endian=false")
-			} else {
-				h.Set("Content-Type", "audio/wav")
-			}
-
-			h.Set("Content-Type", "audio/wav")
-			h.Set("Transfer-Encoding", "chunked")
-			h.Set("X-Accel-Buffering", "no") // tell reverse proxy not to buffer
-
-			// Set headers to prevent the client from caching
-			h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			h.Set("Pragma", "no-cache")
-			h.Set("Expires", "0")
-
-			w.WriteHeader(http.StatusOK)
-
-			err = streamAudio(req.Context(), c, raw, bufferDurationMs, w)
-			if err != nil {
-				log.Println("WARNING: failed to stream audio:", err)
-			}
-		default:
-			http.Error(w, "Unsupported HTTP request method. Supported methods: GET, POST", http.StatusBadRequest)
+			return
 		}
+
+		sendHTTPAudioStream(c, w, req)
 	})
 }
 
@@ -116,6 +79,71 @@ func readAudio(ctx context.Context, reader io.Reader) (audio.Buffer, error) {
 	}
 
 	return buffer, nil
+}
+
+func sendHTTPAudioStream(c channel.Subscriber, w http.ResponseWriter, req *http.Request) {
+	var err error
+	var writer io.Writer = w
+
+	raw := req.Header.Get("Accept") == "audio/x-raw"
+
+	// The client-side buffer duration is used to pad the stream with zeros after a speech.
+	// This is to make the client play the speech immediately
+	// instead of delaying playback until there is more data.
+	bufferDurationMs := uint64(1250)
+	bufferDurationMsStr := req.URL.Query().Get("buffer-ms")
+	if bufferDurationMsStr != "" {
+		bufferDurationMs, err = strconv.ParseUint(bufferDurationMsStr, 10, 32)
+		if err != nil {
+			err = fmt.Errorf("invalid X-Buffer-Duration-Ms header value provided: %w", err)
+			log.Println("WARNING:", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	if strings.Contains(req.Header.Get("Connection"), "Upgrade") {
+		log.Println("Accepting websocket connection")
+		conn, err := websocket.Accept(w, req, nil)
+		if err != nil {
+			err = fmt.Errorf("accept websocket connection: %w", err)
+			log.Println("WARNING:", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer conn.CloseNow()
+
+		writer = &websocketWriter{
+			Ctx:       req.Context(),
+			Websocket: conn,
+		}
+
+		raw = true
+	} else {
+		h := w.Header()
+
+		if raw {
+			h.Set("Content-Type", "audio/x-raw;rate=16000;bits=16;channels=1;encoding=signed-int;big-endian=false")
+		} else {
+			h.Set("Content-Type", "audio/wav")
+		}
+
+		h.Set("Content-Type", "audio/wav")
+		h.Set("Transfer-Encoding", "chunked")
+		h.Set("X-Accel-Buffering", "no") // tell reverse proxy not to buffer
+
+		// Set headers to prevent the client from caching
+		h.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		h.Set("Pragma", "no-cache")
+		h.Set("Expires", "0")
+
+		w.WriteHeader(http.StatusOK)
+	}
+
+	err = streamAudio(req.Context(), c, raw, bufferDurationMs, writer)
+	if err != nil {
+		log.Println("WARNING: failed to stream audio:", err)
+	}
 }
 
 func streamAudio(ctx context.Context, c channel.Subscriber, raw bool, bufferDurationMs uint64, w io.Writer) error {
@@ -149,7 +177,7 @@ func streamAudio(ctx context.Context, c channel.Subscriber, raw bool, bufferDura
 				log.Println("DEBUG: send keep-alive sample")
 				err = sendKeepAliveSample(w)
 				if err != nil {
-					return fmt.Errorf("send keep-alive audio sample: %w", err)
+					return fmt.Errorf("send keep-alive sample: %w", err)
 				}
 
 				continue

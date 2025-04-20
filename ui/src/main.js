@@ -14,7 +14,6 @@ const myvad = await MicVAD.new({
 })
 myvad.start()
 
-const audioStreamUrl = `/channels/default/audio?t=${Math.floor(Date.now() / 1000)}`
 const player = new PCMStreamPlayer()
 
-player.start(audioStreamUrl);
+player.start(`ws://${window.location.host}/channels/default/audio?buffer-ms=50`);

@@ -1,4 +1,4 @@
-// This player allows to play a raw PCM audio stream from a given URL.
+// This player allows to play a raw PCM audio stream from a given websocket URL.
 // Once started, it plays with very low latency, given that the server sends
 // sufficient zero samples after each speech to fill its small buffer,
 // making it play immmediately.
@@ -13,49 +13,75 @@ export class PCMStreamPlayer {
 		this.startTime = this.audioCtx.currentTime;
 		this.playbackQueue = [];
 		this.schedulerRunning = false;
+		this.ws = null;
+		this.url = null;
+		this.reconnectDelay = 1000;
+		this.leftover = new Uint8Array(0);
 	}
 
-	async start(url) {
-		const response = await fetch(url, {
-			headers: {
-				'Accept': 'audio/x-raw',
-				'X-Buffer-Duration-Ms': this.BUFFER_DURATION * 1000
-			}
-		});
-		const reader = response.body.getReader();
+	start(url) {
+		this.url = url;
+		this.connect();
+	}
 
-		const BYTES_PER_SAMPLE = 2;
-		const SAMPLES_PER_CHUNK = this.SAMPLE_RATE * this.BUFFER_DURATION;
-		const CHUNK_SIZE = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE;
-
-		let leftover = new Uint8Array(0);
-
-		if (!this.schedulerRunning) this.schedulerLoop();
-
-		while (true) {
-			if (this.getQueueDuration() > this.MAX_BUFFERED_SEC) {
-				await this.waitUntil(() => this.getQueueDuration() < this.MAX_BUFFERED_SEC * 0.8);
-			}
-
-			const { value, done } = await reader.read();
-			if (done) break;
-
-			const combined = new Uint8Array(leftover.length + value.length);
-			combined.set(leftover);
-			combined.set(value, leftover.length);
-
-			const totalSamples = Math.floor(combined.length / BYTES_PER_SAMPLE);
-			const usableSamples = totalSamples - (totalSamples % SAMPLES_PER_CHUNK);
-			const usableBytes = usableSamples * BYTES_PER_SAMPLE;
-
-			for (let offset = 0; offset < usableBytes; offset += CHUNK_SIZE) {
-				const chunk = combined.slice(offset, offset + CHUNK_SIZE);
-				const buffer = this.decodePCM(chunk);
-				this.playbackQueue.push(buffer);
-			}
-
-			leftover = combined.slice(usableBytes);
+	connect() {
+		if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+			return; // Prevent concurrent reconnect attempts
 		}
+
+		try {
+			console.log(`connecting WebSocket to ${this.url}`)
+
+			this.ws = new WebSocket(this.url);
+			this.ws.binaryType = 'arraybuffer';
+
+			const BYTES_PER_SAMPLE = 2;
+			const SAMPLES_PER_CHUNK = this.SAMPLE_RATE * this.BUFFER_DURATION;
+			const CHUNK_SIZE = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE;
+
+			this.ws.onopen = () => {
+				console.log("WebSocket connected");
+				if (!this.schedulerRunning) this.schedulerLoop();
+			};
+
+			this.ws.onmessage = (event) => {
+				const value = new Uint8Array(event.data);
+
+				const combined = new Uint8Array(this.leftover.length + value.length);
+				combined.set(this.leftover);
+				combined.set(value, this.leftover.length);
+
+				const totalSamples = Math.floor(combined.length / BYTES_PER_SAMPLE);
+				const usableSamples = totalSamples - (totalSamples % SAMPLES_PER_CHUNK);
+				const usableBytes = usableSamples * BYTES_PER_SAMPLE;
+
+				for (let offset = 0; offset < usableBytes; offset += CHUNK_SIZE) {
+					const chunk = combined.slice(offset, offset + CHUNK_SIZE);
+					const buffer = this.decodePCM(chunk);
+					this.playbackQueue.push(buffer);
+				}
+
+				this.leftover = combined.slice(usableBytes);
+			};
+
+			this.ws.onerror = (err) => {
+				console.warn("WebSocket error", err);
+				this.reconnect();
+			};
+
+			this.ws.onclose = () => {
+				console.warn("WebSocket closed, reconnecting");
+				this.reconnect();
+			};
+
+		} catch (err) {
+			console.warn("WebSocket connection failed", err);
+			this.reconnect();
+		}
+	}
+
+	reconnect() {
+		setTimeout(() => this.connect(), this.reconnectDelay);
 	}
 
 	decodePCM(pcmChunk) {
@@ -66,7 +92,6 @@ export class PCMStreamPlayer {
 		for (let i = 0; i < samples.length; i++) {
 			floatBuffer[i] = samples[i] / 32768;
 		}
-
 		return audioBuffer;
 	}
 

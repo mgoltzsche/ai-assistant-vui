@@ -3,6 +3,7 @@ module github.com/mgoltzsche/ai-assistant-vui
 go 1.23.1
 
 require (
+	github.com/coder/websocket v1.8.13
 	github.com/docker/docker v25.0.5+incompatible
 	github.com/go-audio/audio v1.0.0
 	github.com/go-audio/wav v1.1.0
