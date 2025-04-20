@@ -174,7 +174,6 @@ func streamAudio(ctx context.Context, c channel.Subscriber, raw bool, bufferDura
 					return fmt.Errorf("copy audio into stream: %w", err)
 				}
 			case <-time.After(50 * time.Second):
-				log.Println("DEBUG: send keep-alive sample")
 				err = sendKeepAliveSample(w)
 				if err != nil {
 					return fmt.Errorf("send keep-alive sample: %w", err)

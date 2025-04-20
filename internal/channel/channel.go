@@ -44,6 +44,10 @@ func newChannel(ctx context.Context, cfg config.Configuration, client *http.Clie
 		defer c.output.Stop()
 
 		for m := range output {
+			if m.RequestNum < conversation.RequestCounter() {
+				continue
+			}
+
 			duration, err := audioDuration(m.WaveData)
 			if err != nil {
 				log.Println("ERROR:", err)
@@ -51,6 +55,10 @@ func newChannel(ctx context.Context, cfg config.Configuration, client *http.Clie
 			}
 
 			if m.UserOnly || conversation.AddAIResponse(m.RequestNum, m.Text) {
+				if m.UserOnly {
+					log.Println("assistant:", m.Text)
+				}
+
 				c.output.Publish(m)
 				time.Sleep(duration)
 			}

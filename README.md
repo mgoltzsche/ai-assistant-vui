@@ -28,7 +28,7 @@ Given the latest advancements of AI technology, I was curious whether a VUI coul
 ## Features/requirements
 
 * A voice-controlled AI assistant that can interact with the real world using preconfigured tools: e.g. can decide to run a docker container to change the music volume.
-* Low latency/near-realtime response to support a fluent, natural conversation.
+* Low latency/realtime response to support a fluent, natural conversation.
 * Verbally interruptable system in order to appear responsive and not waste the user's time by talking about irrelevant information. When interrupted, the assistant stops talking after it finished the current sentence and for consistency only what it really said ends up within the message history.
 * Configurable wake word support to prevent the AI from responding to every voice communication (e.g. between humans) which is annoying otherwise. Any sentence the user says that does not contain the wake word is ignored by the AI.
 * Save energy/API calls and avoid hallucination of the STT system by STT-processing only audio signals that contain voice activity (VAD).
