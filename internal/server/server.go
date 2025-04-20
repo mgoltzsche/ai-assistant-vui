@@ -135,14 +135,24 @@ func streamAudio(ctx context.Context, c channel.Subscriber, raw bool, bufferDura
 
 	for {
 		if flushed {
-			msg, ok := <-ch
-			if !ok {
-				break
-			}
+			select {
+			case msg, ok := <-ch:
+				if !ok {
+					break
+				}
 
-			err = copyAudio(ctx, w, bytes.NewReader(msg.WaveData))
-			if err != nil {
-				return fmt.Errorf("copy audio into stream: %w", err)
+				err = copyAudio(ctx, w, bytes.NewReader(msg.WaveData))
+				if err != nil {
+					return fmt.Errorf("copy audio into stream: %w", err)
+				}
+			case <-time.After(50 * time.Second):
+				log.Println("DEBUG: send keep-alive sample")
+				err = sendKeepAliveSample(w)
+				if err != nil {
+					return fmt.Errorf("send keep-alive audio sample: %w", err)
+				}
+
+				continue
 			}
 
 			flushed = false
@@ -251,6 +261,24 @@ func copyAudio(ctx context.Context, w io.Writer, reader io.ReadSeeker) error {
 			return fmt.Errorf("write padding pcm data: %w", err)
 		}
 	}*/
+
+	flusher, ok := w.(http.Flusher)
+	if ok {
+		flusher.Flush()
+	}
+
+	return nil
+}
+
+func sendKeepAliveSample(w io.Writer) error {
+	n, err := w.Write([]byte{0, 0})
+	if err != nil {
+		return err
+	}
+
+	if n != 2 {
+		return io.ErrShortWrite
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if ok {
