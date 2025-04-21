@@ -57,18 +57,19 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 	go func() {
 		defer close(ch)
 
-		fns := functions.Noop()
+		fns := functions.NewCallLoopPreventingProvider(functions.Noop())
 
 		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), fns, conv, toolCallSink, ch)
 		if err != nil {
 			log.Println("ERROR: chat completion:", err)
 		}
 
-		fns = c.Functions
+		reqNum := int64(-1)
 
 		for req := range requests {
-			if conv.RequestCounter() > req.RequestNum {
-				continue // skip outdated request (user requested something else)
+			if req.RequestNum > reqNum {
+				fns = functions.NewCallLoopPreventingProvider(c.Functions)
+				reqNum = req.RequestNum
 			}
 
 			err := c.createChatCompletion(ctx, llm, req.RequestNum, fns, conv, toolCallSink, ch)
@@ -86,7 +87,11 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 	return ch, nil
 }
 
-func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqNum int64, fns functions.FunctionProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
+func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
+	if conv.RequestCounter() > reqNum {
+		return nil // skip outdated request (user requested something else)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -96,8 +101,6 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 	if err != nil {
 		return fmt.Errorf("get available functions: %w", err)
 	}
-
-	functions = preventInfiniteCallLoop(functions, conv)
 
 	llmFunctions := make([]llms.FunctionDefinition, len(functions))
 	for i, f := range functions {
@@ -133,8 +136,8 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 		return err
 	}
 
-	for _, c := range resp.Choices {
-		for _, toolCall := range c.ToolCalls {
+	for _, choice := range resp.Choices {
+		for _, toolCall := range choice.ToolCalls {
 			if toolCall.Type != "function" || toolCall.FunctionCall == nil {
 				log.Println("WARNING: ignoring unsupported tool type that was requested by the LLM:", toolCall.Type)
 				continue
@@ -156,6 +159,16 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 				if err != nil {
 					return fmt.Errorf("parse function call arguments: %w", err)
 				}
+			}
+
+			callAllowed, err := fns.IsFunctionCallAllowed(call.Name, args)
+			if err != nil {
+				return fmt.Errorf("deduplicate function call: %w", err)
+			}
+
+			if !callAllowed {
+				// Re-request chat completion without the now banned tool
+				return c.createChatCompletion(ctx, llm, reqNum, fns, conv, toolCallSink, ch)
 			}
 
 			if conv.AddToolCall(reqNum, callID, *call) {

@@ -113,8 +113,8 @@ Schematic sequence diagram:
 * The wake word must be recognized by the whisper model - this could be improved potentially using a specialized wake word model.
 * Context size and storage:
   * To keep the context size minimal and speed up inference, only the last user request corresponding AI response and tool results are kept within the chat history - otherwise the context size is quickly exceeded.
-* Due to a LocalAI LLM bug function calls are often repeated infinitely - this is detected and prevented after the 2nd call.
-* Audio device usage: The terminal app container does not work with pulseaudio but ALSA and therefore requires no other application to use the same audio devices it uses - alternatively, the web app can be used.
+* Due to a LocalAI LLM bug function calls are often repeated infinitely - this is detected and prevented by re-requesting chat completion without the function in that case, increasing the response latency, though.
+* Audio device usage: The terminal app container does not work with pulseaudio but ALSA and therefore requires no other application to use the same audio devices it uses - alternatively, the web app can be used, though.
 * Other people can also give the AI commands (e.g. somebody on the street shouting through the window) - voice recognition could protect against that.
 
 ## Roadmap
@@ -122,7 +122,6 @@ Schematic sequence diagram:
 * Context size and storage:
   * Chat history retention: Detect when the maximum context size would be exceeded and delete old messages only in that case, starting with the first user request and assistant response.
   * Add Retrieval-Augmented Generation (RAG) support to kind of support an infinite context size: write the chat history (and other personal information) into a vector database, query it for every user request to find related information and add it to the message history before sending it to the chat completion endpoint.
-* Prevent function call repetition.
 * Add a wake word engine in order to save energy/STT API requests.
 * Authentication via voice recognition to make the assistant aware of who is talking and to protect against other people commanding the assistant.
 
