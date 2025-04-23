@@ -43,6 +43,11 @@ h1 {
   text-align: center;
 }
 
+#error {
+	color: #ff0000;
+	font-weight: 400;
+}
+
 .logo {
   max-height: 16em;
   padding: 1.5em;

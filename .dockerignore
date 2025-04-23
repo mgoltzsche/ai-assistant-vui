@@ -1,2 +1,5 @@
 /ui/node_modules
 /ui/dist
+/cmd/*/*
+!/cmd/*/*.go
+

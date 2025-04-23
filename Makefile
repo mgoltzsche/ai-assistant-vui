@@ -21,7 +21,7 @@ run-vui: build-vui ## Run the command line VUI.
 	docker run --rm --privileged --network=host -v /var/run/docker.sock:/var/run/docker.sock $(CLI_IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
 
 run-server: build-server ## Run the VUI web API server.
-	docker run --rm --network=host -v /var/run/docker.sock:/var/run/docker.sock -v "`pwd`/ui/dist:/var/lib/ai-assistant-vui/ui" $(SERVER_IMAGE)
+	docker run --rm --network=host -v /var/run/docker.sock:/var/run/docker.sock -v "`pwd`/ui/dist:/var/lib/ai-assistant-vui/ui" $(SERVER_IMAGE) --tls
 
 ##@ Development
 
