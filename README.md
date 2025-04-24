@@ -86,7 +86,9 @@ make run-localai
 ```sh
 make run-server
 ```
-Now you can browse the web app at [http://127.0.0.1:9090](http://127.0.0.1:9090) to talk to the AI assistant.
+Now you can browse the web app at [https://localhost:8443](https://localhost:8443) to talk to the AI assistant.
+Please note that by default the server generates a self-signed TLS certificate.
+TLS is necessary in order to let the webapp access the microphone when browsing it from a host other than `localhost`, e.g. from your phone.
 
 
 3b) Alternatively, run the VUI (within another terminal):

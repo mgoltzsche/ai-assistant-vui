@@ -20,6 +20,7 @@ func main() {
 	cfg, err := config.FromFile(configFile)
 	configFlag := &config.Flag{File: configFile, Config: &cfg}
 
+	listenAddr := ":8443"
 	webDir := "/var/lib/ai-assistant-vui/ui"
 	tlsEnabled := false
 	tlsCert := ""
@@ -27,6 +28,7 @@ func main() {
 
 	flag.Var(configFlag, "config", "Path to the configuration file")
 	flag.StringVar(&cfg.ServerURL, "server-url", cfg.ServerURL, "URL pointing to the OpenAI API server that runs the LLM")
+	flag.StringVar(&listenAddr, "listen", listenAddr, "Address the server should listen on")
 	flag.StringVar(&webDir, "web-dir", webDir, "Path to the web UI directory")
 	flag.BoolVar(&tlsEnabled, "tls", tlsEnabled, "Serve securely via HTTPS/TLS")
 	flag.StringVar(&tlsKey, "tls-key", tlsKey, "Path to the TLS key file")
@@ -40,16 +42,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	err = runServer(ctx, cfg, webDir, tlsEnabled, tlsCert, tlsKey)
+	err = runServer(ctx, cfg, listenAddr, webDir, tlsEnabled, tlsCert, tlsKey)
 	if err != nil {
-		log.Fatal("FATAL:", err)
+		log.Fatalln("FATAL:", err)
 	}
 }
 
-func runServer(ctx context.Context, cfg config.Configuration, webDir string, tlsEnabled bool, tlsCert, tlsKey string) error {
+func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir string, tlsEnabled bool, tlsCert, tlsKey string) error {
 	mux := http.NewServeMux()
 	srv := &http.Server{
-		Addr:        ":9090",
+		Addr:        listenAddr,
 		BaseContext: func(net.Listener) context.Context { return ctx },
 		Handler:     mux,
 	}
