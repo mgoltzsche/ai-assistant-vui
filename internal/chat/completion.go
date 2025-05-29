@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -111,7 +110,13 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 
 	printMessages(messages)
 
-	var buf bytes.Buffer
+	parser := responseParser{
+		Cancel:              cancel,
+		ReqNum:              reqNum,
+		Conversation:        conv,
+		StripResponsePrefix: c.StripResponsePrefix,
+		Ch:                  ch,
+	}
 
 	// TODO: fix streaming when function support is also enabled.
 	// Currently LocalAI does not stream the response when function support is enabled.
@@ -120,13 +125,12 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 
 	resp, err := llm.GenerateContent(ctx,
 		messages,
-		llms.WithStreamingFunc(c.streamFunc(cancel, reqNum, conv, &buf, ch)),
+		llms.WithStreamingFunc(parser.ConsumeChunk),
 		//llms.WithTools(tools),
 		llms.WithFunctions(llmFunctions),
-		//llms.WithFunctionCallBehavior(llms.FunctionCallBehaviorAuto),
 		llms.WithTemperature(c.Temperature),
 		llms.WithFrequencyPenalty(c.FrequencyPenalty),
-		llms.WithN(c.MaxTokens),
+		llms.WithMaxTokens(c.MaxTokens),
 	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -143,7 +147,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 				continue
 			}
 
-			call, callID, err := parseFunctionCall(buf.String())
+			call, callID, err := parseFunctionCall(parser.buf.String())
 			if err != nil {
 				return fmt.Errorf("parse function call: %w", err)
 			}
@@ -203,16 +207,9 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 		}
 	}
 
-	if buf.Len() > 0 {
-		msg := strings.TrimSuffix(buf.String(), "</s>")
+	// TODO: make AI response after function calls work
 
-		for _, sentence := range splitIntoSentences(msg) {
-			ch <- ResponseChunk{
-				RequestNum: reqNum,
-				Text:       sentence,
-			}
-		}
-	}
+	parser.Complete()
 
 	return nil
 }
@@ -289,81 +286,4 @@ type aiRequest struct {
 type functionCall struct {
 	Name      string `json:"name"`
 	Arguments string `Json:"arguments"`
-}
-
-func (c *Completer) streamFunc(cancel context.CancelFunc, reqNum int64, conv *model.Conversation, buf *bytes.Buffer, ch chan<- ResponseChunk) func(ctx context.Context, chunk []byte) error {
-	lastContent := ""
-	lastSentence := ""
-
-	return func(ctx context.Context, chunk []byte) error {
-		if conv.RequestCounter() > reqNum {
-			// Cancel response stream if request is outdated (user requested something else)
-			cancel()
-			return nil
-		}
-
-		content := string(chunk)
-
-		buf.WriteString(content)
-
-		// TODO: don't emit separate event for numbered list items, e.g. 3. ?!
-		if buf.Len() > len(content)+1 && (content == "\n" || content == " " && (lastContent == "." || lastContent == "!" || lastContent == "?")) {
-			sentence := buf.String()
-
-			if strings.TrimSpace(sentence) != "" {
-				if sentence == lastSentence {
-					// Cancel response stream if last sentence was repeated
-					cancel()
-					return nil
-				}
-
-				lastSentence = sentence
-
-				sentence = c.sanitizeMessage(sentence)
-
-				for _, sentence := range splitIntoSentences(sentence) {
-					ch <- ResponseChunk{
-						RequestNum: reqNum,
-						Text:       sentence,
-					}
-				}
-			}
-
-			buf.Reset()
-		}
-
-		lastContent = content
-
-		return nil
-	}
-}
-
-func (c *Completer) sanitizeMessage(msg string) string {
-	msg = strings.TrimSpace(msg)
-	return strings.TrimPrefix(msg, c.StripResponsePrefix)
-}
-
-// splitIntoSentences splits the given message at punctuation marks.
-// This is to make the response appear to be streamed when LocalAI doesn't return a streamed response.
-// Processing the response sentence by sentence reduces the time to the first response and allows the user to interrupt the AI verbally between each spoken sentence.
-// See https://github.com/mudler/LocalAI/issues/1187
-func splitIntoSentences(msg string) []string {
-	m := endOfSentenceRegex.FindAllStringIndex(msg, -1)
-	sentences := make([]string, len(m))
-	pos := 0
-
-	for i, idx := range m {
-		sentences[i] = strings.TrimSpace(msg[pos:idx[1]]) + " "
-		pos = idx[1]
-	}
-
-	if pos < len(msg) && len(strings.TrimSpace(msg[pos:])) > 0 {
-		sentences = append(sentences, msg[pos:])
-	}
-
-	if len(sentences) > 0 {
-		sentences[len(sentences)-1] = strings.TrimSpace(sentences[len(sentences)-1])
-	}
-
-	return sentences
 }

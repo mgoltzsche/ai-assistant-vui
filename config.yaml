@@ -3,7 +3,7 @@ minVolume: 450
 vadEnabled: true
 vadModelPath: /models/silero_vad.onnx
 sttModel: whisper-1
-chatModel: localai-functioncall-qwen2.5-7b-v0.5
+chatModel: qwen3-8b
 ttsModel: voice-en-us-amy-low
 temperature: 0.7
 wakeWord: Computer
@@ -200,3 +200,27 @@ functions:
     yq eval -e '.result == null' < /tmp/response 2>/dev/null >/dev/null || \
       (printf 'Failed to skip the song: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
     echo Skipped the current song and started playing the next one.
+
+#- name: start_music_playback
+#  description: Call this method to make the music player play music.
+#  parameters:
+#    type: object
+#    properties:
+#      rationale:
+#        type: string
+#        description: The rationale for choosing this function call with these parameters.
+#    required: ["rationale"]
+  # Using yq instead of jq here since official jq image doesn't ship curl/wget
+#  image: mikefarah/yq:4
+#  command: /bin/sh
+#  args:
+#  - -euc
+#  - |
+#    REQUEST='{"jsonrpc": "2.0", "id": 1, "method": "core.playback.play"}'
+#    wget --no-check-certificate -qO /tmp/response \
+#      --header='Content-Type: application/json' \
+#      --post-data="$REQUEST" \
+#      https://kubemate-a33a/mopidy/rpc &&
+#    yq eval -e '.result == null' < /tmp/response 2>/dev/null >/dev/null || \
+#      (printf 'Failed to start music playback: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
+#    echo Music playback started.

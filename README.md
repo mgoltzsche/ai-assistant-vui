@@ -80,7 +80,7 @@ make build-vui
 make run-localai
 ```
 
-2) Browse the LocalAI web GUI at [http://127.0.0.1:8080/browse/](http://127.0.0.1:8080/browse/) and search and install the models you want to use. When using the [default AI Assistant VUI configuration](./config.yaml), you need to install `whisper-1` (STT), `localai-functioncall-qwen2.5-7b-v0.5` (chat) and `voice-en-us-amy-low` (TTS).
+2) Browse the LocalAI web GUI at [http://127.0.0.1:8080/browse/](http://127.0.0.1:8080/browse/) and search and install the models you want to use. When using the [default AI Assistant VUI configuration](./config.yaml), you need to install `whisper-1` (STT), `qwen3-8b` (chat) and `voice-en-us-amy-low` (TTS).
 
 3a) Run the server (within another terminal):
 ```sh
