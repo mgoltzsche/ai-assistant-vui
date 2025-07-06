@@ -21,7 +21,7 @@ ui/node_modules:
 	cd ui && npm install
 
 run-localai: ## Run the LocalAI container.
-	docker run -ti --rm --network=host --privileged -v `pwd`/models:/build/models localai/localai:v3.0.0-vulkan
+	docker run -ti --rm --network=host --privileged -v `pwd`/models:/build/models localai/localai:v3.1.1-vulkan
 
 run-vui: build-vui ## Run the command line VUI.
 	docker run --rm --privileged --network=host -v /var/run/docker.sock:/var/run/docker.sock $(CLI_IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
