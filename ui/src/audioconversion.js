@@ -1,3 +1,12 @@
+/*export function float32ToInt8(float32Array) {
+	const int8Array = new Int8Array(float32Array.length);
+	for (let i = 0; i < float32Array.length; i++) {
+		let sample = Math.max(-1, Math.min(1, float32Array[i]));
+		int8Array[i] = Math.round(sample * 127);
+	}
+	return int8Array;
+}*/
+
 export function wavBlobFromFloat32Array(samples, sampleRate) {
 	// See https://devtails.xyz/@adam/how-to-write-a-wav-file-in-javascript
 	const numChannels = 1;

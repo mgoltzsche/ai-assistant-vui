@@ -39,7 +39,7 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 		case http.MethodPost:
 			defer req.Body.Close()
 
-			buf, err := readAudio(req.Context(), req.Body)
+			buf, err := readWaveAudio(req.Context(), req.Body)
 			if err != nil {
 				err = fmt.Errorf("failed to read PCM audio from request body: %w", err)
 				log.Println("WARNING:", err)
@@ -55,7 +55,7 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 	})
 }
 
-func readAudio(ctx context.Context, reader io.Reader) (audio.Buffer, error) {
+func readWaveAudio(ctx context.Context, reader io.Reader) (audio.Buffer, error) {
 	b, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("read request body: %w", err)
@@ -81,7 +81,12 @@ func readAudio(ctx context.Context, reader io.Reader) (audio.Buffer, error) {
 	return buffer, nil
 }
 
-func sendHTTPAudioStream(c channel.Subscriber, w http.ResponseWriter, req *http.Request) {
+type pubsubChannel interface {
+	channel.Publisher
+	channel.Subscriber
+}
+
+func sendHTTPAudioStream(c pubsubChannel, w http.ResponseWriter, req *http.Request) {
 	var err error
 	var writer io.Writer = w
 
@@ -112,6 +117,14 @@ func sendHTTPAudioStream(c channel.Subscriber, w http.ResponseWriter, req *http.
 			return
 		}
 		defer conn.CloseNow()
+
+		go func() {
+			err := readAudioFromWebsocket(req.Context(), conn, c)
+			if err != nil {
+				log.Println("ERROR: read websocket audio:", err)
+				return
+			}
+		}()
 
 		writer = &websocketWriter{
 			Ctx:       req.Context(),
@@ -145,6 +158,75 @@ func sendHTTPAudioStream(c channel.Subscriber, w http.ResponseWriter, req *http.
 		log.Println("WARNING: failed to stream audio:", err)
 	}
 }
+
+func readAudioFromWebsocket(ctx context.Context, conn *websocket.Conn, out channel.Publisher) error {
+	for {
+		conn.SetReadLimit(-1)
+		msgType, reader, err := conn.Reader(ctx)
+		if err != nil {
+			return fmt.Errorf("read websocket message: %w", err)
+		}
+
+		if msgType != websocket.MessageBinary {
+			return fmt.Errorf("invalid message type %q received", msgType)
+		}
+
+		//buf, err := readRawPCMStream(ctx, reader)
+		buf, err := readWaveAudio(ctx, reader)
+		if err != nil {
+			return fmt.Errorf("read websocket audio message: %w", err)
+		}
+
+		out.Publish(buf)
+	}
+}
+
+/*
+func writeWavFile(buf audio.Buffer) error {
+	file, err := os.OpenFile("/output/record.wav", os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		log.Printf("ERROR: open target wav file: %s\n", err)
+		return fmt.Errorf("open target wav file: %w", err)
+	}
+	defer file.Close()
+	//encoder := wav.NewEncoder(file, buf.Format.SampleRate, buf.SourceBitDepth, buf.Format.NumChannels, 1)
+	encoder := wav.NewEncoder(file, 16000, 16, 1, 1)
+	if err := encoder.Write(buf.AsIntBuffer()); err != nil {
+		return fmt.Errorf("write buffer to wav file: %w", err)
+	}
+	if err := encoder.Close(); err != nil {
+		return fmt.Errorf("encoder close: %w", err)
+	}
+	return nil
+}
+
+func readRawPCMStream(ctx context.Context, reader io.Reader) (*audio.IntBuffer, error) {
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("read audio: %w", err)
+	}
+
+	os.WriteFile("/output/record.pcm", b, 0644)
+
+	samples := make([]int, 0, len(b)/2)
+	for i := 0; i < len(b); i += 2 {
+		sample := int16(binary.LittleEndian.Uint16(b[i : i+2]))
+		//_, err := binary.Decode([]byte{b[i]}, binary.LittleEndian, &v)
+		//if err != nil {
+		//	return nil, fmt.Errorf("decode audio: %w", err)
+		//}
+		samples = append(samples, int(sample))
+	}
+
+	return &audio.IntBuffer{
+		Format: &audio.Format{
+			SampleRate:  16000,
+			NumChannels: 1,
+		},
+		SourceBitDepth: 16,
+		Data:           samples,
+	}, nil
+}*/
 
 func streamAudio(ctx context.Context, c channel.Subscriber, raw bool, bufferDurationMs uint64, w io.Writer) error {
 	s := c.Subscribe(ctx)

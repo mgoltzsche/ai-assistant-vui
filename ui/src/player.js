@@ -139,4 +139,16 @@ export class PCMStreamPlayer {
 			check();
 		});
 	}
+
+	send(buf) {
+		if (!(buf instanceof ArrayBuffer || ArrayBuffer.isView(buf))) {
+			throw new Error("send(buf) expects an ArrayBuffer or TypedArray but got "+buf);
+		}
+		if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+			const data = buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+			this.ws.send(data);
+		} else {
+			console.warn("WebSocket is not open. Unable to send PCM data.");
+		}
+	}
 }

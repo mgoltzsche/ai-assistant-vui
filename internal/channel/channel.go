@@ -18,6 +18,7 @@ import (
 
 type AudioMessage = model.AudioMessage
 type Subscriber = pubsub.Subscriber[AudioMessage]
+type Publisher = pubsub.Publisher[audio.Buffer]
 
 type Channel struct {
 	input  chan<- audio.Buffer
