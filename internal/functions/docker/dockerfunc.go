@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
@@ -58,7 +58,7 @@ func (f *function) Call(params map[string]any) (string, error) {
 	}
 	defer cli.Close()
 
-	reader, err := cli.ImagePull(ctx, c.Image, types.ImagePullOptions{})
+	reader, err := cli.ImagePull(ctx, c.Image, image.PullOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to run function %q: pull image: %w", f.Name, err)
 	}
