@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-audio/audio"
 	"github.com/go-audio/wav"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/pubsub"
@@ -18,17 +17,17 @@ import (
 
 type AudioMessage = model.AudioMessage
 type Subscriber = pubsub.Subscriber[AudioMessage]
-type Publisher = pubsub.Publisher[audio.Buffer]
+type Publisher = pubsub.Publisher[AudioMessage]
 
 type Channel struct {
-	input  chan<- audio.Buffer
+	input  chan<- AudioMessage
 	output *pubsub.PubSub[AudioMessage]
 	cancel context.CancelFunc
 }
 
 func newChannel(ctx context.Context, cfg config.Configuration, client *http.Client) (*Channel, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	input := make(chan audio.Buffer, 5)
+	input := make(chan AudioMessage, 5)
 	c := &Channel{
 		input:  input,
 		output: pubsub.New[AudioMessage](),
@@ -75,7 +74,7 @@ func (c *Channel) Stop() {
 	close(c.input)
 }
 
-func (c *Channel) Publish(msg audio.Buffer) {
+func (c *Channel) Publish(msg AudioMessage) {
 	c.input <- msg
 }
 

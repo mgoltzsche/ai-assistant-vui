@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-audio/audio"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions/docker"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
@@ -19,7 +18,7 @@ import (
 
 type AudioMessage = model.AudioMessage
 
-func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan audio.Buffer) (<-chan AudioMessage, *model.Conversation, error) {
+func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan AudioMessage) (<-chan AudioMessage, *model.Conversation, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		<-ctx.Done()
@@ -83,7 +82,8 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan a
 		return nil, nil, err
 	}
 
-	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequests, notificationSink, conversation)
+	userRequestsConverted := chat.ToAudioMessageStreamWithoutAudioData(userRequests)
+	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequestsConverted, notificationSink, conversation)
 	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
 	completionRequests = chat.MergeChannels(completionRequests, toolResults)
 

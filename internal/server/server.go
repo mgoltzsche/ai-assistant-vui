@@ -16,6 +16,7 @@ import (
 	"github.com/go-audio/audio"
 	"github.com/go-audio/wav"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/channel"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
 	"github.com/orcaman/writerseeker"
 )
@@ -39,7 +40,8 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 		case http.MethodPost:
 			defer req.Body.Close()
 
-			buf, err := readWaveAudio(req.Context(), req.Body)
+			//buf, err := readWaveAudio(req.Context(), req.Body)
+			audioMsg, err := toAudioMessage(req.Body)
 			if err != nil {
 				err = fmt.Errorf("failed to read PCM audio from request body: %w", err)
 				log.Println("WARNING:", err)
@@ -47,7 +49,8 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 				return
 			}
 
-			c.Publish(buf)
+			c.Publish(audioMsg)
+
 			return
 		}
 
@@ -55,7 +58,7 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 	})
 }
 
-func readWaveAudio(ctx context.Context, reader io.Reader) (audio.Buffer, error) {
+func readWaveAudio(reader io.Reader) (audio.Buffer, error) {
 	b, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("read request body: %w", err)
@@ -172,13 +175,25 @@ func readAudioFromWebsocket(ctx context.Context, conn *websocket.Conn, out chann
 		}
 
 		//buf, err := readRawPCMStream(ctx, reader)
-		buf, err := readWaveAudio(ctx, reader)
+		//buf, err := readWaveAudio(ctx, reader)
+		audioMsg, err := toAudioMessage(reader)
 		if err != nil {
 			return fmt.Errorf("read websocket audio message: %w", err)
 		}
 
-		out.Publish(buf)
+		out.Publish(audioMsg)
 	}
+}
+
+func toAudioMessage(reader io.Reader) (model.AudioMessage, error) {
+	audioData, err := io.ReadAll(reader)
+	if err != nil {
+		return model.AudioMessage{}, err
+	}
+
+	return model.AudioMessage{
+		WaveData: audioData,
+	}, nil
 }
 
 /*

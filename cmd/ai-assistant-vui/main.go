@@ -86,7 +86,9 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 		}
 	}
 
-	playbackRequests, conversation, err := vui.AudioPipeline(ctx, cfg, audioInput)
+	wavAudioInput := audio.AudioBuffersToRiffWavs(audioInput)
+
+	playbackRequests, conversation, err := vui.AudioPipeline(ctx, cfg, wavAudioInput)
 	if err != nil {
 		return err
 	}

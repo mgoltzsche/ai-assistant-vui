@@ -65,7 +65,7 @@ func (c *Conversation) RequestCounter() int64 {
 	return c.requestCounter
 }
 
-func (c *Conversation) AddUserRequest(msg string) int64 {
+func (c *Conversation) AddUserRequest(msgContent llms.ContentPart) int64 {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -76,11 +76,14 @@ func (c *Conversation) AddUserRequest(msg string) int64 {
 	}
 
 	cmsg := conversationMessage{
-		RequestNum:     c.requestCounter,
-		MessageContent: llms.TextParts(llms.ChatMessageTypeHuman, msg),
+		RequestNum: c.requestCounter,
+		MessageContent: llms.MessageContent{
+			Role:  llms.ChatMessageTypeHuman,
+			Parts: []llms.ContentPart{msgContent},
+		},
 	}
 
-	log.Println("user request:", strings.TrimSpace(msg))
+	log.Println("user request:", strings.TrimSpace(FormatMessage(cmsg.MessageContent)))
 
 	c.dropPreviousMessages()
 	c.addMessage(cmsg)
