@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/go-audio/audio"
@@ -45,12 +45,12 @@ func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *
 
 			if req.UserOnly || conv.AddAIResponse(req.RequestNum, req.Text) {
 				if req.UserOnly {
-					log.Println("assistant:", req.Text)
+					slog.Info("assistant:", req.Text)
 				}
 
 				err := playAudio(ctx, bytes.NewReader(req.WaveData), device)
 				if err != nil {
-					log.Println("ERROR: play audio:", err)
+					slog.Error(fmt.Sprintf("play audio: %s", err))
 				}
 			}
 		}
@@ -138,7 +138,7 @@ func playAudio(ctx context.Context, wavFile io.ReadSeeker, device *portaudio.Dev
 			// This happens occasionally for some reason.
 			// It doesn't impact the audio playback significantly as long as we're not failing here.
 			// TODO: get to the bottom of this and fix it!
-			log.Println("WARNING: play audio: write chunk:", err)
+			slog.Warn(fmt.Sprintf("play audio: write chunk: %s", err))
 		}
 
 		select {

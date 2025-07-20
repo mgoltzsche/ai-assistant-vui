@@ -2,7 +2,7 @@ package wakeword
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"regexp"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
@@ -32,7 +32,7 @@ func (f *Filter) FilterByWakeWord(requests <-chan Message) <-chan Message {
 			if regex.MatchString(req.Text) {
 				ch <- req
 			} else {
-				log.Println("user:", req.Text)
+				slog.Info(fmt.Sprintf("user: %s", req.Text))
 			}
 		}
 	}()

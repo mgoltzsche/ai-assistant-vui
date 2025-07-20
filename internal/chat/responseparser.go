@@ -3,7 +3,8 @@ package chat
 import (
 	"bytes"
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
@@ -56,7 +57,7 @@ func (p *responseParser) parseSentence(sentence string) {
 	}
 
 	if sentence == p.lastSentence {
-		log.Println("WARNING: Cancelling response stream since last sentence was repeated")
+		slog.Warn("cancelling response stream since last sentence was repeated")
 		p.Cancel()
 		return
 	}
@@ -85,7 +86,7 @@ func (p *responseParser) parseSentence(sentence string) {
 		}
 
 		for _, ts := range splitIntoSentences(thought) {
-			log.Println("assistant (thinking):", ts)
+			slog.Info(fmt.Sprintf("assistant (thinking): %s", ts))
 		}
 
 		if !thoughtEnd {

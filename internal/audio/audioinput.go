@@ -3,7 +3,7 @@ package audio
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"time"
 
@@ -58,18 +58,18 @@ func (o *Input) RecordAudio(ctx context.Context) (<-chan audio.Buffer, error) {
 			select {
 			case <-ctx.Done():
 				if err := audioStream.Stop(); err != nil {
-					log.Println("WARNING: stopping input audio stream:", err)
+					slog.Warn(fmt.Sprintf("stopping input audio stream: %s", err))
 				}
 				if err := audioStream.Close(); err != nil {
-					log.Println("WARNING: closing input audio stream:", err)
+					slog.Warn("closing input audio stream: %s", err))
 				}
 				return
 			default:
 				if err := audioStream.Read(); err != nil {
 					if err == portaudio.InputOverflowed {
-						log.Println("WARNING: audio input overflowed - dropped samples")
+						slog.Warn("audio input overflowed - dropped samples")
 					} else {
-						log.Println("ERROR: reading audio from stream:", err)
+						slog.Warn("reading audio from stream:", err)
 					}
 					continue
 				}
@@ -82,7 +82,7 @@ func (o *Input) RecordAudio(ctx context.Context) (<-chan audio.Buffer, error) {
 				if time.Since(lastHeard) < o.MinDelay && time.Duration(int64(math.Ceil(float64(len(buffer)+len(in))/16000)))*time.Second < o.MaxDuration {
 					buffer = append(buffer, in...)
 
-					//log.Printf("listening (volume: %d)...\n", int(volume))
+					//slog.Debug(fmt.Sprintf("listening (volume: %d)...\n", int(volume)))
 				} else if len(buffer) > 0 {
 					buffer = resampleInt16(buffer, int(device.DefaultSampleRate), o.SampleRate)
 					ch <- &audio.IntBuffer{

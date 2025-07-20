@@ -3,7 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
@@ -46,7 +46,7 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 			//	continue // skip outdated request (user requested something else)
 			//}
 
-			log.Printf("Calling function %q with args %#v", call.FunctionCall.Name, call.FunctionCall.Arguments)
+			slog.Debug(fmt.Sprintf("Calling function %q with args %#v", call.FunctionCall.Name, call.FunctionCall.Arguments))
 
 			var functionCallResult string
 
@@ -67,13 +67,16 @@ func (r *FunctionRunner) RunFunctionCalls(ctx context.Context, conv *model.Conve
 				}
 			}
 			if err != nil {
-				log.Println("ERROR: Failed to call function:", err)
+				slog.Error(fmt.Sprintf("failed to call function: %s", err))
 
 				functionCallResult = fmt.Sprintf("Failed to call function: %s", err)
 			} else {
-				for _, line := range strings.Split(functionCallResult, "\n") {
-					log.Printf("Function %s result: %s", call.FunctionCall.Name, line)
+				result := ""
+				if len(functionCallResult) > 0 {
+					result = strings.ReplaceAll("\n"+functionCallResult, "\n", "\n\t")
 				}
+
+				slog.Debug(fmt.Sprintf("function %s result: %s", call.FunctionCall.Name, result))
 			}
 
 			conv.AddToolResponse(call.RequestNum, llms.ToolCallResponse{

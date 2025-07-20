@@ -4,12 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/mgoltzsche/ai-assistant-vui/internal/cli"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/server"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tlsutils"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
@@ -33,10 +35,11 @@ func main() {
 	flag.BoolVar(&tlsEnabled, "tls", tlsEnabled, "Serve securely via HTTPS/TLS")
 	flag.StringVar(&tlsKey, "tls-key", tlsKey, "Path to the TLS key file")
 	flag.StringVar(&tlsCert, "tls-cert", tlsKey, "Path to the TLS certificate file")
-	flag.Parse()
+	cli.ParseFlagsWithEnvVars(flag.CommandLine, "VUI_")
 
 	if !configFlag.IsSet && err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -44,7 +47,8 @@ func main() {
 
 	err = runServer(ctx, cfg, listenAddr, webDir, tlsEnabled, tlsCert, tlsKey)
 	if err != nil {
-		log.Fatalln("FATAL:", err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 }
 
@@ -60,6 +64,7 @@ func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir
 
 	go func() {
 		<-ctx.Done()
+		slog.Info("terminating")
 		srv.Shutdown(ctx)
 	}()
 
@@ -68,7 +73,7 @@ func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir
 	if tlsEnabled {
 		//srv.TLSConfig = &tls.Config{}
 		if tlsCert == "" && tlsKey == "" {
-			log.Println("generating self-signed TLS certificate")
+			slog.Info("generating self-signed TLS certificate")
 
 			var cleanup func()
 
@@ -80,11 +85,11 @@ func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir
 			defer cleanup()
 		}
 
-		log.Println("listening on", srv.Addr)
+		slog.Info(fmt.Sprintf("listening on %s", srv.Addr))
 
 		err = srv.ListenAndServeTLS(tlsCert, tlsKey)
 	} else {
-		log.Println("listening on", srv.Addr)
+		slog.Info(fmt.Sprintf("listening on %s", srv.Addr))
 
 		err = srv.ListenAndServe()
 	}

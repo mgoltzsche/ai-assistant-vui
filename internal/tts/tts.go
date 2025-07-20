@@ -2,8 +2,9 @@ package tts
 
 import (
 	"context"
+	"fmt"
 	"io"
-	"log"
+	"log/slog"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
@@ -29,12 +30,12 @@ func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Req
 
 			body, err := g.Service.GenerateAudio(ctx, req)
 			if err != nil {
-				log.Println("ERROR: generate speech:", err)
+				slog.Error(fmt.Sprintf("generate speech: %s", err))
 				continue
 			}
 			b, err := io.ReadAll(body)
 			if err != nil {
-				log.Println("ERROR: read speech generation response body:", err)
+				slog.Error(fmt.Sprintf("read speech generation response body: %s", err))
 				continue
 			}
 

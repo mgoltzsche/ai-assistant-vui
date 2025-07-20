@@ -16,6 +16,7 @@ COPY ui /ui
 RUN npm run build
 
 FROM alpine:3.22
+ENV VUI_LOG_LEVEL=DEBUG
 COPY --from=server /build/ai-assistant-vui-server /
 COPY config.yaml /etc/ai-assistant-vui/config.yaml
 COPY --from=ui /ui/dist /var/lib/ai-assistant-vui/ui

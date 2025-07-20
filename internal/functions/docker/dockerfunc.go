@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -96,7 +96,7 @@ func (f *function) Call(params map[string]any) (string, error) {
 			RemoveVolumes: true,
 		})
 		if err != nil {
-			log.Println("WARNING: Failed to remove function container:", err)
+			slog.Warn(fmt.Sprintf("failed to remove function container: %s", err))
 		}
 	}()
 
@@ -132,7 +132,7 @@ func (f *function) Call(params map[string]any) (string, error) {
 
 	for _, line := range strings.Split(strings.TrimSpace(stderr.String()), "\n") {
 		if line != "" {
-			log.Printf("WARNING: function %s: %s", f.Name, line)
+			slog.Warn(fmt.Sprintf("function %s: %s", f.Name, line))
 		}
 	}
 

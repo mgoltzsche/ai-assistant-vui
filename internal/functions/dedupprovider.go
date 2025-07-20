@@ -3,7 +3,7 @@ package functions
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 )
 
 type FunctionCallChecker interface {
@@ -39,7 +39,7 @@ func (p *CallLoopPreventingProvider) IsFunctionCallAllowed(name string, args map
 	callSignature := fmt.Sprintf("%s(%s)", name, string(b))
 
 	if _, alreadyCalled := p.calls[callSignature]; alreadyCalled {
-		log.Printf("WARNING: disabling %s tool temporarily due to duplicate call", name)
+		slog.Warn(fmt.Sprintf("disabling %s tool temporarily due to duplicate call", name))
 		p.bannedNames[name] = struct{}{}
 
 		return false, nil

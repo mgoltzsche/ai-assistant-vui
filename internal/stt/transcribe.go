@@ -2,7 +2,8 @@ package stt
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
@@ -29,7 +30,7 @@ func (t *Transcriber) Transcribe(ctx context.Context, input <-chan AudioMessage)
 		for msg := range input {
 			result, err := t.Service.Transcribe(ctx, msg.WaveData)
 			if err != nil {
-				log.Println("ERROR: transcribe:", err)
+				slog.Error(fmt.Sprintf("transcribe: %s", err))
 				continue
 			}
 

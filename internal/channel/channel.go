@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -50,13 +50,13 @@ func newChannel(ctx context.Context, cfg config.Configuration, client *http.Clie
 
 			duration, err := audioDuration(m.WaveData)
 			if err != nil {
-				log.Println("ERROR:", err)
+				slog.Error(fmt.Sprintf("read audio output duration: %s", err))
 				continue
 			}
 
 			if m.UserOnly || conversation.AddAIResponse(m.RequestNum, m.Text) {
 				if m.UserOnly {
-					log.Println("assistant:", m.Text)
+					slog.Info(fmt.Sprintf("assistant: %s", m.Text))
 				}
 
 				c.output.Publish(m)

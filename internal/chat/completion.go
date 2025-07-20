@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -60,7 +60,7 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 
 		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), fns, conv, toolCallSink, ch)
 		if err != nil {
-			log.Println("ERROR: chat completion:", err)
+			slog.Error(fmt.Sprintf("chat completion: %s", err))
 		}
 
 		reqNum := int64(-1)
@@ -73,7 +73,7 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 
 			err := c.createChatCompletion(ctx, llm, req.RequestNum, fns, conv, toolCallSink, ch)
 			if err != nil {
-				log.Println("ERROR: chat completion:", err)
+				slog.Error(fmt.Sprintf("chat completion: %s", err))
 
 				ch <- ResponseChunk{
 					RequestNum: req.RequestNum,
@@ -143,7 +143,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 	for _, choice := range resp.Choices {
 		for _, toolCall := range choice.ToolCalls {
 			if toolCall.Type != "function" || toolCall.FunctionCall == nil {
-				log.Println("WARNING: ignoring unsupported tool type that was requested by the LLM:", toolCall.Type)
+				slog.Warn(fmt.Sprintf("ignoring unsupported tool type that was requested by the LLM: %s", toolCall.Type))
 				continue
 			}
 
@@ -217,16 +217,21 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 var whitespaceRegex = regexp.MustCompile(`\s+`)
 
 func printMessages(messages []llms.MessageContent) {
-	log.Println("Requesting chat completion for message history:")
+	msgs := make([]string, 0, len(messages))
+
 	for i, m := range messages {
 		content := model.FormatMessage(m)
 		if len(content) > 140 {
 			content = content[:140] + "..."
 		}
+
 		content = strings.ReplaceAll(content, "\n", " ")
 		content = whitespaceRegex.ReplaceAllString(content, " ")
-		log.Printf("  %d. %s", i, content)
+
+		msgs = append(msgs, fmt.Sprintf("\n\t%d. %s", i, content))
 	}
+
+	slog.Debug(fmt.Sprintf("Requesting chat completion for message history: %s", strings.Join(msgs, "")))
 }
 
 // parseFunctionCall parses a single function call from multiple function call JSON arrays.

@@ -2,7 +2,8 @@ package pubsub
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	goruntime "runtime"
 	"strings"
 	"sync"
@@ -88,7 +89,7 @@ func (p *PubSub[E]) Publish(evt E) {
 		select {
 		case s.ch <- evt:
 		case <-time.After(20 * time.Second):
-			log.Printf("WARNING: kicking subscriber since it timed out accepting the event after 20s, subscriber stack trace:\n  %s", strings.ReplaceAll(s.stack, "\n", "\n  "))
+			slog.Warn(fmt.Sprintf("kicking subscriber since it timed out accepting the event after 20s, subscriber stack trace:\n  %s", strings.ReplaceAll(s.stack, "\n", "\n  ")))
 			go s.Stop()
 		}
 	}

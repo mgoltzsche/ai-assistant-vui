@@ -58,4 +58,5 @@ RUN set -eux; \
 	curl -fsSL https://github.com/snakers4/silero-vad/raw/refs/tags/$SILERO_VAD_VERSION/src/silero_vad/data/silero_vad.onnx > /models/silero_vad.onnx
 COPY --from=vui /build/ai-assistant-vui /
 COPY config.yaml /etc/ai-assistant-vui/config.yaml
+ENV VUI_LOG_LEVEL=DEBUG
 ENTRYPOINT ["/ai-assistant-vui"]

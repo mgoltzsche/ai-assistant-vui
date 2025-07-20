@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,7 +31,7 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 
 		c, err := channels.GetOrCreate(channelId)
 		if err != nil {
-			log.Println("ERROR:", err)
+			slog.Error(err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -43,9 +43,9 @@ func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux
 			//buf, err := readWaveAudio(req.Context(), req.Body)
 			audioMsg, err := toAudioMessage(req.Body)
 			if err != nil {
-				err = fmt.Errorf("failed to read PCM audio from request body: %w", err)
-				log.Println("WARNING:", err)
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				errMsg := fmt.Sprintf("failed to read PCM audio from request body: %s", err)
+				slog.Warn(errMsg)
+				http.Error(w, errMsg, http.StatusBadRequest)
 				return
 			}
 
@@ -103,20 +103,20 @@ func sendHTTPAudioStream(c pubsubChannel, w http.ResponseWriter, req *http.Reque
 	if bufferDurationMsStr != "" {
 		bufferDurationMs, err = strconv.ParseUint(bufferDurationMsStr, 10, 32)
 		if err != nil {
-			err = fmt.Errorf("invalid X-Buffer-Duration-Ms header value provided: %w", err)
-			log.Println("WARNING:", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			errMsg := fmt.Sprintf("invalid X-Buffer-Duration-Ms header value provided: %s", err)
+			slog.Warn(errMsg)
+			http.Error(w, errMsg, http.StatusBadRequest)
 			return
 		}
 	}
 
 	if strings.Contains(req.Header.Get("Connection"), "Upgrade") {
-		log.Println("Accepting websocket connection")
+		slog.Info("Accepting websocket connection")
 		conn, err := websocket.Accept(w, req, nil)
 		if err != nil {
-			err = fmt.Errorf("accept websocket connection: %w", err)
-			log.Println("WARNING:", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			errMsg := fmt.Sprintf("accept websocket connection: %s", err)
+			slog.Warn(errMsg)
+			http.Error(w, errMsg, http.StatusBadRequest)
 			return
 		}
 		defer conn.CloseNow()
@@ -124,7 +124,7 @@ func sendHTTPAudioStream(c pubsubChannel, w http.ResponseWriter, req *http.Reque
 		go func() {
 			err := readAudioFromWebsocket(req.Context(), conn, c)
 			if err != nil {
-				log.Println("ERROR: read websocket audio:", err)
+				slog.Error(fmt.Sprintf("read websocket audio: %s", err))
 				return
 			}
 		}()
@@ -158,7 +158,7 @@ func sendHTTPAudioStream(c pubsubChannel, w http.ResponseWriter, req *http.Reque
 
 	err = streamAudio(req.Context(), c, raw, bufferDurationMs, writer)
 	if err != nil {
-		log.Println("WARNING: failed to stream audio:", err)
+		slog.Warn(fmt.Sprintf("failed to stream audio: %s", err))
 	}
 }
 
@@ -305,7 +305,7 @@ func streamAudio(ctx context.Context, c channel.Subscriber, raw bool, bufferDura
 	}
 
 	if ctx.Err() != nil {
-		log.Println("WARNING: request was cancelled")
+		slog.Warn("request was cancelled")
 	}
 
 	return nil

@@ -3,7 +3,7 @@ package model
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -23,22 +23,28 @@ type conversationMessage struct {
 }
 
 func FormatMessage(m llms.MessageContent) string {
-	parts := make([]string, len(m.Parts))
-	for i, p := range m.Parts {
+	return fmt.Sprintf("%s: %s", m.Role, formatMessageParts(m.Parts))
+}
+
+func formatMessageParts(parts []llms.ContentPart) string {
+	strs := make([]string, len(parts))
+
+	for i, p := range parts {
 		switch part := p.(type) {
 		case llms.TextContent:
-			parts[i] = part.Text
+			strs[i] = part.Text
 		case llms.ToolCall:
-			parts[i] = fmt.Sprintf("{%s %s(%s)}", part.ID[:5], part.FunctionCall.Name, part.FunctionCall.Arguments)
+			strs[i] = fmt.Sprintf("{%s %s(%s)}", part.ID[:5], part.FunctionCall.Name, part.FunctionCall.Arguments)
 		case llms.ToolCallResponse:
-			parts[i] = fmt.Sprintf("&%s %q", part.ToolCallID[:5], part.Content)
+			strs[i] = fmt.Sprintf("&%s %q", part.ToolCallID[:5], part.Content)
 		case llms.BinaryContent:
-			parts[i] = "[binary]"
+			strs[i] = "[binary]"
 		default:
-			parts[i] = fmt.Sprintf("%T%v", p, p)
+			strs[i] = fmt.Sprintf("%T%v", p, p)
 		}
 	}
-	return fmt.Sprintf("%s: %s", m.Role, strings.Join(parts, " "))
+
+	return strings.Join(strs, "")
 }
 
 func NewConversation(systemPrompt string) *Conversation {
@@ -82,8 +88,9 @@ func (c *Conversation) AddUserRequest(msgContent llms.ContentPart) int64 {
 			Parts: []llms.ContentPart{msgContent},
 		},
 	}
+	msgStr := formatMessageParts(cmsg.MessageContent.Parts)
 
-	log.Println("user request:", strings.TrimSpace(FormatMessage(cmsg.MessageContent)))
+	slog.Info(fmt.Sprintf("user request: %s", strings.TrimSpace(msgStr)))
 
 	c.dropPreviousMessages()
 	c.addMessage(cmsg)
@@ -99,7 +106,7 @@ func (c *Conversation) AddAIResponse(requestNum int64, msg string) bool {
 		RequestNum:     requestNum,
 		MessageContent: llms.TextParts(llms.ChatMessageTypeAI, msg),
 	}) {
-		log.Println("assistant:", strings.TrimSpace(msg))
+		slog.Info(fmt.Sprintf("assistant: %s", strings.TrimSpace(msg)))
 		return true
 	}
 
@@ -121,7 +128,7 @@ func (c *Conversation) AddToolCall(requestNum int64, callID string, call llms.Fu
 			}},
 		},
 	}) {
-		log.Printf("ai tool call %s of function %s with args %#v", callID, call.Name, call.Arguments)
+		slog.Debug(fmt.Sprintf("ai tool call %s of function %s with args %#v", callID, call.Name, call.Arguments))
 		return true
 	}
 

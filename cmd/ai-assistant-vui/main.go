@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
+	"log/slog"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/gordonklaus/portaudio"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/audio"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/cli"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vad"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vui"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
@@ -35,10 +36,11 @@ func main() {
 	flag.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "name of the chat model to use")
 	flag.Float64Var(&cfg.Temperature, "temperature", cfg.Temperature, "temperature parameter for the chat LLM")
 	flag.StringVar(&cfg.WakeWord, "wake-word", cfg.WakeWord, "word used to address the assistent (needs to be recognized by whisper)")
-	flag.Parse()
+	cli.ParseFlagsWithEnvVars(flag.CommandLine, "VUI_")
 
 	if !configFlag.IsSet && err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 
 	portaudio.Initialize()
@@ -49,12 +51,13 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		log.Println("terminating")
+		slog.Info("terminating")
 	}()
 
 	err = runAudioPipeline(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 }
 

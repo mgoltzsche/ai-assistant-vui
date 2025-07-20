@@ -2,7 +2,7 @@ package vad
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/go-audio/audio"
@@ -31,7 +31,7 @@ func (d *Detector) DetectVoiceActivity(input <-chan audio.Buffer) (<-chan audio.
 	go func() {
 		defer func() {
 			if err := sileroVAD.Destroy(); err != nil {
-				log.Printf("WARNING: destroy silero vad: %v\n", err)
+				slog.Warn(fmt.Sprintf("destroy silero vad: %s\n", err))
 			}
 			close(ch)
 		}()
@@ -40,11 +40,11 @@ func (d *Detector) DetectVoiceActivity(input <-chan audio.Buffer) (<-chan audio.
 			start := time.Now()
 			segments, err := sileroVAD.Detect(audioBuffer.AsFloat32Buffer().Data)
 			if err != nil {
-				log.Println("WARNING: detect voice:", err)
+				slog.Warn(fmt.Sprintf("detect voice: %s", err))
 				continue
 			}
 			detected := len(segments) > 0
-			log.Printf("voice activity detected: %v (took %s)\n", detected, time.Since(start))
+			slog.Info(fmt.Sprintf("voice activity detected: %v (took %s)\n", detected, time.Since(start)))
 
 			if detected {
 				ch <- audioBuffer
