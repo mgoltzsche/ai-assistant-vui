@@ -17,7 +17,7 @@ try {
 				method: 'POST',
 				body: wavBlobFromFloat32Array(audioSamples, 16000)
 			});*/
-			player.send(await wavBlobFromFloat32Array(audioSamples).bytes())
+			player.send(await wavBlobFromFloat32Array(audioSamples, 16000).bytes())
 		},
 	})
 	player.start(`wss://${window.location.host}/channels/default/audio?buffer-ms=50`);
