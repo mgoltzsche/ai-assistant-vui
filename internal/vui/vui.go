@@ -10,7 +10,8 @@ import (
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions/docker"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/soundgen"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
+
+	//"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tts"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/wakeword"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
@@ -42,13 +43,13 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		WakeWord: cfg.WakeWord,
 	}
 	httpClient := &http.Client{Timeout: 90 * time.Second}
-	transcriber := &stt.Transcriber{
+	/*transcriber := &stt.Transcriber{
 		Service: &stt.Client{
 			URL:    cfg.ServerURL,
 			Model:  cfg.STTModel,
 			Client: httpClient,
 		},
-	}
+	}*/
 	requester := &chat.Requester{}
 	runner := &chat.FunctionRunner{
 		Functions: functions,
@@ -74,16 +75,16 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		SampleRate: 16000,
 	}
 
-	transcriptions := transcriber.Transcribe(ctx, input)
-	userRequests := wakewordFilter.FilterByWakeWord(transcriptions)
+	//transcriptions := transcriber.Transcribe(ctx, input)
+	//userRequests := wakewordFilter.FilterByWakeWord(transcriptions)
 	notificationSounds, notificationSink, err := soundGen.Notify(conversation)
 	if err != nil {
 		close(notificationSink)
 		return nil, nil, err
 	}
 
-	userRequestsConverted := chat.ToAudioMessageStreamWithoutAudioData(userRequests)
-	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequestsConverted, notificationSink, conversation)
+	//userRequestsConverted := chat.ToAudioMessageStreamWithoutAudioData(userRequests)
+	completionRequests := requester.AddUserRequestsToConversation(ctx, input, notificationSink, conversation)
 	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
 	completionRequests = chat.MergeChannels(completionRequests, toolResults)
 
