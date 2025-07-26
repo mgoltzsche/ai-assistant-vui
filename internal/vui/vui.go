@@ -50,18 +50,18 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		},
 	}
 	requester := &chat.Requester{}
-	runner := &chat.FunctionRunner{
-		Functions: functions,
-	}
 	chatCompleter := &chat.Completer{
-		ServerURL:           cfg.ServerURL,
-		Model:               cfg.ChatModel,
-		Temperature:         cfg.Temperature,
-		FrequencyPenalty:    1.5,
-		MaxTokens:           0,
-		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
-		HTTPClient:          httpClient,
-		Functions:           functions,
+		ServerURL:              cfg.ServerURL,
+		APIKey:                 cfg.APIKey,
+		Model:                  cfg.ChatModel,
+		Temperature:            cfg.Temperature,
+		FrequencyPenalty:       1.5,
+		MaxTokens:              0,
+		StripResponsePrefix:    fmt.Sprintf("%s:", wakewordFilter.WakeWord),
+		MaxTurns:               5,
+		MaxConcurrentToolCalls: 5,
+		HTTPClient:             httpClient,
+		Functions:              functions,
 	}
 	speechGen := &tts.SpeechGenerator{
 		Service: &tts.Client{
@@ -84,13 +84,10 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 
 	userRequestsConverted := chat.ToAudioMessageStreamWithoutAudioData(userRequests)
 	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequestsConverted, notificationSink, conversation)
-	toolResults, toolCallSink := runner.RunFunctionCalls(ctx, conversation)
-	completionRequests = chat.MergeChannels(completionRequests, toolResults)
 
-	responses, err := chatCompleter.ChatCompletion(ctx, completionRequests, conversation, toolCallSink)
+	responses, err := chatCompleter.ChatCompletion(ctx, completionRequests, conversation)
 	if err != nil {
 		close(notificationSink)
-		close(toolCallSink)
 		cancel()
 		for _ = range responses {
 		}

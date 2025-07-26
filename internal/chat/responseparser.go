@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
@@ -98,6 +99,7 @@ func (p *responseParser) parseSentence(sentence string) {
 
 	for _, sentence := range splitIntoSentences(sentence) {
 		p.Ch <- ResponseChunk{
+			Type:       model.MessageTypeChunk,
 			RequestNum: p.ReqNum,
 			Text:       sentence,
 		}
@@ -113,6 +115,8 @@ func (p *responseParser) sanitizeMessage(msg string) string {
 	msg = strings.TrimPrefix(msg, p.StripResponsePrefix)
 	return msg
 }
+
+var endOfSentenceRegex = regexp.MustCompile(`(\.|\?|!)+(\s+|$)`)
 
 // splitIntoSentences splits the given message at punctuation marks.
 // This is to make the response appear to be streamed when LocalAI doesn't return a streamed response.

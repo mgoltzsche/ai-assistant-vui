@@ -12,7 +12,7 @@ import (
 
 type Conversation struct {
 	requestCounter int64
-	cancel         context.CancelFunc
+	cancelFuncs    []context.CancelFunc
 	messages       []conversationMessage
 	mutex          sync.Mutex
 }
@@ -60,11 +60,11 @@ func NewConversation(systemPrompt string) *Conversation {
 	}
 }
 
-func (c *Conversation) SetCancelFunc(fn context.CancelFunc) {
+func (c *Conversation) AddCancelFunc(fn context.CancelFunc) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	c.cancel = fn
+	c.cancelFuncs = append(c.cancelFuncs, fn)
 }
 
 func (c *Conversation) RequestCounter() int64 {
@@ -77,9 +77,11 @@ func (c *Conversation) AddUserRequest(msgContent llms.ContentPart) int64 {
 
 	c.requestCounter++
 
-	if c.cancel != nil {
-		c.cancel()
+	for _, cancel := range c.cancelFuncs {
+		cancel()
 	}
+
+	c.cancelFuncs = nil
 
 	cmsg := conversationMessage{
 		RequestNum: c.requestCounter,
@@ -99,6 +101,10 @@ func (c *Conversation) AddUserRequest(msgContent llms.ContentPart) int64 {
 }
 
 func (c *Conversation) AddAIResponse(requestNum int64, msg string) bool {
+	if len(msg) == 0 {
+		return false
+	}
+
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -113,39 +119,34 @@ func (c *Conversation) AddAIResponse(requestNum int64, msg string) bool {
 	return false
 }
 
-func (c *Conversation) AddToolCall(requestNum int64, callID string, call llms.FunctionCall) bool {
+func (c *Conversation) AddToolCallResponse(requestNum int64, call llms.ToolCall, result string) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if c.addMessage(conversationMessage{
-		RequestNum: requestNum,
-		MessageContent: llms.MessageContent{
-			Role: llms.ChatMessageTypeAI,
-			Parts: []llms.ContentPart{llms.ToolCall{
-				ID:           callID,
-				Type:         "function",
-				FunctionCall: &call,
-			}},
-		},
-	}) {
-		slog.Debug(fmt.Sprintf("ai tool call %s of function %s with args %#v", callID, call.Name, call.Arguments))
-		return true
+	if c.requestCounter > requestNum {
+		// ignore response from an outdated request
+		return
 	}
 
-	return false
-}
-
-func (c *Conversation) AddToolResponse(requestNum int64, resp llms.ToolCallResponse) bool {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	return c.addMessage(conversationMessage{
-		RequestNum: requestNum,
-		MessageContent: llms.MessageContent{
-			Role:  llms.ChatMessageTypeTool,
-			Parts: []llms.ContentPart{resp},
+	c.messages = append(c.messages,
+		conversationMessage{
+			RequestNum: requestNum,
+			MessageContent: llms.MessageContent{
+				Role:  llms.ChatMessageTypeAI,
+				Parts: []llms.ContentPart{call},
+			},
 		},
-	})
+		conversationMessage{
+			RequestNum: requestNum,
+			MessageContent: llms.MessageContent{
+				Role: llms.ChatMessageTypeTool,
+				Parts: []llms.ContentPart{llms.ToolCallResponse{
+					ToolCallID: call.ID,
+					Name:       call.FunctionCall.Name,
+					Content:    result,
+				}},
+			},
+		})
 }
 
 func (c *Conversation) addMessage(msg conversationMessage) bool {

@@ -1,6 +1,7 @@
 package functions
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/tmc/langchaingo/llms"
@@ -12,7 +13,7 @@ type FunctionProvider interface {
 
 type Function interface {
 	Definition() llms.FunctionDefinition
-	Call(params map[string]any) (string, error)
+	Call(ctx context.Context, params map[string]any) (string, error)
 }
 
 func FindByName(name string, functions []Function) (Function, error) {

@@ -1,4 +1,5 @@
 serverURL: http://localhost:8080
+apiKey: fake
 minVolume: 450
 vadEnabled: true
 vadModelPath: /models/silero_vad.onnx

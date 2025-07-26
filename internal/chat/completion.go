@@ -17,8 +17,6 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
-var endOfSentenceRegex = regexp.MustCompile(`(\.|\?|!)+(\s+|$)`)
-
 type ResponseChunk = model.Message
 
 type ChatCompletionRequest struct {
@@ -26,25 +24,28 @@ type ChatCompletionRequest struct {
 }
 
 type Completer struct {
-	ServerURL           string
-	Model               string
-	Temperature         float64
-	FrequencyPenalty    float64
-	MaxTokens           int
-	StripResponsePrefix string
-	HTTPClient          HTTPDoer
-	Functions           functions.FunctionProvider
+	ServerURL              string
+	APIKey                 string
+	Model                  string
+	Temperature            float64
+	FrequencyPenalty       float64
+	MaxTokens              int
+	StripResponsePrefix    string
+	MaxTurns               int
+	MaxConcurrentToolCalls int
+	HTTPClient             HTTPDoer
+	Functions              functions.FunctionProvider
 }
 
 type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation, toolCallSink chan<- ToolCallRequest) (<-chan ResponseChunk, error) {
+func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation) (<-chan ResponseChunk, error) {
 	llm, err := openai.New(
 		openai.WithHTTPClient(c.HTTPClient),
 		openai.WithBaseURL(c.ServerURL+"/v1"),
-		openai.WithToken("fake"),
+		openai.WithToken(c.APIKey),
 		openai.WithModel(c.Model),
 	)
 	if err != nil {
@@ -58,27 +59,26 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 
 		fns := functions.NewCallLoopPreventingProvider(functions.Noop())
 
-		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), fns, conv, toolCallSink, ch)
+		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), fns, conv, ch)
 		if err != nil {
 			slog.Error(fmt.Sprintf("chat completion: %s", err))
 		}
 
-		reqNum := int64(-1)
-
 		for req := range requests {
-			if req.RequestNum > reqNum {
-				fns = functions.NewCallLoopPreventingProvider(c.Functions)
-				reqNum = req.RequestNum
-			}
-
-			err := c.createChatCompletion(ctx, llm, req.RequestNum, fns, conv, toolCallSink, ch)
+			err := c.completeChat(ctx, llm, req.RequestNum, conv, ch)
 			if err != nil {
 				slog.Error(fmt.Sprintf("chat completion: %s", err))
 
 				ch <- ResponseChunk{
+					Type:       model.MessageTypeChunk,
 					RequestNum: req.RequestNum,
-					Text:       fmt.Sprintf("ERROR: Chat completion API request failed: %s", err),
+					Text:       fmt.Sprintf("ERROR: Chat completion failed: %s", err),
 				}
+			}
+
+			ch <- ResponseChunk{
+				Type:       model.MessageTypeEnd,
+				RequestNum: req.RequestNum,
 			}
 		}
 	}()
@@ -86,7 +86,31 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 	return ch, nil
 }
 
-func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, toolCallSink chan<- ToolCallRequest, ch chan<- ResponseChunk) error {
+func (c *Completer) completeChat(ctx context.Context, llm *openai.LLM, reqNum int64, conv *model.Conversation, ch chan<- ResponseChunk) error {
+	fns := functions.NewCallLoopPreventingProvider(c.Functions)
+	turn := 0
+
+	for {
+		turn++
+
+		if c.MaxTurns > 0 && turn > c.MaxTurns {
+			break
+		}
+
+		err := c.createChatCompletion(ctx, llm, reqNum, fns, conv, ch)
+		if err == nil {
+			return nil
+		}
+
+		if _, ok := err.(*reconcileError); !ok {
+			slog.Warn(err.Error())
+		}
+	}
+
+	return fmt.Errorf("maximum LLM conversation turns of %d was exceeded for the request", c.MaxTurns)
+}
+
+func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	if conv.RequestCounter() > reqNum {
 		return nil // skip outdated request (user requested something else)
 	}
@@ -94,7 +118,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	conv.SetCancelFunc(cancel)
+	conv.AddCancelFunc(cancel)
 
 	functions, err := fns.Functions()
 	if err != nil {
@@ -140,78 +164,200 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 		return err
 	}
 
-	for _, choice := range resp.Choices {
-		for _, toolCall := range choice.ToolCalls {
+	if conv.RequestCounter() > reqNum {
+		return nil // skip outdated request (user requested something else)
+	}
+
+	if hasToolCalls(resp) {
+		doneCh := make(chan error)
+		inputCh := make(chan llms.ToolCall)
+
+		toolCalls, err := parseToolCalls(parser.buf.String())
+		if err != nil {
+			return err
+		}
+
+		concurrentCallNum := len(toolCalls)
+		if c.MaxConcurrentToolCalls > 0 && c.MaxConcurrentToolCalls < concurrentCallNum {
+			concurrentCallNum = c.MaxConcurrentToolCalls
+		}
+
+		for i := 0; i < concurrentCallNum; i++ {
+			go func() {
+				defer close(doneCh)
+
+				for toolCall := range inputCh {
+					err := handleToolCall(ctx, toolCall, reqNum, fns, conv, ch)
+					if err != nil {
+						doneCh <- fmt.Errorf("failed to call function %q: %w", toolCall.FunctionCall.Name, err)
+					}
+
+					doneCh <- nil
+				}
+			}()
+		}
+
+		for _, toolCall := range toolCalls {
 			if toolCall.Type != "function" || toolCall.FunctionCall == nil {
 				slog.Warn(fmt.Sprintf("ignoring unsupported tool type that was requested by the LLM: %s", toolCall.Type))
 				continue
 			}
 
-			call, callID, err := parseFunctionCall(parser.buf.String())
-			if err != nil {
-				return fmt.Errorf("parse function call: %w", err)
-			}
-
-			if call == nil {
-				call = toolCall.FunctionCall
-			}
-
-			var args map[string]any
-
-			if call.Arguments != "" {
-				err = json.Unmarshal([]byte(call.Arguments), &args)
-				if err != nil {
-					return fmt.Errorf("parse function call arguments: %w", err)
-				}
-			}
-
-			callAllowed, err := fns.IsFunctionCallAllowed(call.Name, args)
-			if err != nil {
-				return fmt.Errorf("deduplicate function call: %w", err)
-			}
-
-			if !callAllowed {
-				// Re-request chat completion without the now banned tool
-				return c.createChatCompletion(ctx, llm, reqNum, fns, conv, toolCallSink, ch)
-			}
-
-			if conv.AddToolCall(reqNum, callID, *call) {
-				func() {
-					defer func() {
-						recover()
-					}()
-					if rationale, ok := args["rationale"]; ok && rationale != "" {
-						infos := splitIntoSentences(fmt.Sprintf("%v", rationale))
-						infos = append(infos, fmt.Sprintf("Let me use my %q tool.", call.Name))
-
-						for _, sentence := range infos {
-							ch <- ResponseChunk{
-								RequestNum: reqNum,
-								Text:       sentence,
-								UserOnly:   true,
-							}
-						}
-					}
-					toolCallSink <- ToolCallRequest{
-						RequestNum: reqNum,
-						ToolCallID: callID,
-						FunctionCall: FunctionCall{
-							Name:      call.Name,
-							Arguments: args,
-						},
-					}
-				}()
-			}
-
-			return nil
+			inputCh <- toolCall
 		}
-	}
 
-	// TODO: make AI response after function calls work
+		close(inputCh)
+
+		failed := 0
+		total := 0
+
+		for err := range doneCh {
+			total++
+
+			if err != nil {
+				slog.Warn(err.Error())
+
+				failed++
+			}
+		}
+
+		if failed > 0 && failed == total {
+			return fmt.Errorf("all tool calls failed")
+		}
+
+		return &reconcileError{fmt.Errorf("needs reconciliation")}
+	}
 
 	parser.Complete()
 
 	return nil
+}
+
+type reconcileError struct {
+	error
+}
+
+func hasToolCalls(resp *llms.ContentResponse) bool {
+	for _, choice := range resp.Choices {
+		for _, toolCall := range choice.ToolCalls {
+			switch toolCall.Type {
+			case "function":
+				return true
+			default:
+				slog.Warn(fmt.Sprintf("ignoring unsupported tool type that was requested by the LLM: %s", toolCall.Type))
+			}
+		}
+	}
+
+	return false
+}
+
+func parseToolCalls(content string) ([]llms.ToolCall, error) {
+	// TODO: parse multiple
+	call, callID, err := parseFunctionCall(content)
+	if err != nil {
+		return nil, fmt.Errorf("parse function call: %w", err)
+	}
+
+	return []llms.ToolCall{
+		{
+			ID:           callID,
+			Type:         "function",
+			FunctionCall: call,
+		},
+	}, nil
+}
+
+func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
+	call := toolCall.FunctionCall
+	args := map[string]any{}
+
+	if call.Arguments != "" {
+		err := json.Unmarshal([]byte(call.Arguments), &args)
+		if err != nil {
+			return fmt.Errorf("parse function call arguments: %w", err)
+		}
+	}
+
+	callAllowed, err := fns.IsFunctionCallAllowed(call.Name, args)
+	if err != nil {
+		return fmt.Errorf("deduplicate function call: %w", err)
+	}
+
+	if !callAllowed {
+		// Re-request chat completion without the now banned tool
+		return fmt.Errorf("repeating function call %q is not allowed", call.Name)
+	}
+
+	if rationale, ok := args["rationale"]; ok && rationale != "" {
+		infos := splitIntoSentences(fmt.Sprintf("%v", rationale))
+
+		if len(infos) > 1 {
+			infos = infos[:1]
+		}
+
+		infos = append(infos, fmt.Sprintf("Let me use my %q tool.", call.Name))
+
+		for _, sentence := range infos {
+			ch <- ResponseChunk{
+				Type:       model.MessageTypeChunk,
+				RequestNum: reqNum,
+				Text:       sentence,
+				UserOnly:   true,
+			}
+		}
+	}
+
+	result, err := callTool(ctx, toolCall, args, fns)
+	if err != nil {
+		msg := fmt.Sprintf("ERROR: failed to call function %q: %s", call.Name, err)
+		result = msg
+
+		slog.Warn(msg)
+	}
+
+	conv.AddToolCallResponse(reqNum, toolCall, result)
+
+	return nil
+}
+
+func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns *functions.CallLoopPreventingProvider) (string, error) {
+	slog.Debug(fmt.Sprintf("ai tool call %s of function %s with args %#v", call.ID, call.FunctionCall.Name, call.FunctionCall.Arguments))
+
+	fnList, err := fns.Functions()
+	if err != nil {
+		return "", err
+	}
+
+	fn, err := functions.FindByName(call.FunctionCall.Name, fnList)
+	if err != nil {
+		return "", err
+	}
+
+	err = validateFunctionCallArgs(args, fn.Definition())
+	if err != nil {
+		return "", err
+	}
+
+	functionCallResult, err := fn.Call(ctx, args)
+	if err != nil {
+		return "", err
+	}
+
+	functionCallResult = strings.TrimSpace(functionCallResult)
+
+	if functionCallResult == "" {
+		return "", errors.New("function  call returned empty result")
+	}
+
+	result := ""
+	if len(functionCallResult) > 0 {
+		result = strings.ReplaceAll("\n"+functionCallResult, "\n", "\n\t")
+	}
+
+	slog.Debug(fmt.Sprintf("function %s result: %s", call.FunctionCall.Name, result))
+
+	return result, nil
 }
 
 var whitespaceRegex = regexp.MustCompile(`\s+`)
@@ -232,6 +378,16 @@ func printMessages(messages []llms.MessageContent) {
 	}
 
 	slog.Debug(fmt.Sprintf("Requesting chat completion for message history: %s", strings.Join(msgs, "")))
+}
+
+func validateFunctionCallArgs(args map[string]any, paramDefinition llms.FunctionDefinition) error {
+	if len(args) == 0 {
+		return errors.New("function called with empty arguments")
+	}
+
+	// TODO: validate parameters
+
+	return nil
 }
 
 // parseFunctionCall parses a single function call from multiple function call JSON arrays.

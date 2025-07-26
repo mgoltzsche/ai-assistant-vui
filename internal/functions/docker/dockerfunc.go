@@ -40,8 +40,7 @@ func (f *function) Definition() llms.FunctionDefinition {
 	return f.FunctionDefinition.FunctionDefinition
 }
 
-func (f *function) Call(params map[string]any) (string, error) {
-	ctx := context.Background()
+func (f *function) Call(ctx context.Context, params map[string]any) (string, error) {
 	c := f.Container
 
 	timeout := c.Timeout

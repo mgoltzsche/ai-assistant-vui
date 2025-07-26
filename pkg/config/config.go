@@ -8,6 +8,7 @@ import (
 
 type Configuration struct {
 	ServerURL    string               `json:"serverURL"`
+	APIKey       string               `json:"apiKey"`
 	InputDevice  string               `json:"inputDevice,omitempty"`
 	OutputDevice string               `json:"outputDevice,omitempty"`
 	MinVolume    int                  `json:"minVolume,omitempty"`
