@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 )
@@ -28,7 +29,12 @@ func (g *SpeechGenerator) GenerateAudio(ctx context.Context, requests <-chan Req
 				continue
 			}
 
-			body, err := g.Service.GenerateAudio(ctx, req)
+			msg := strings.TrimSpace(req.Text)
+			if msg == "" {
+				continue
+			}
+
+			body, err := g.Service.GenerateAudio(ctx, msg)
 			if err != nil {
 				slog.Error(fmt.Sprintf("generate speech: %s", err))
 				continue

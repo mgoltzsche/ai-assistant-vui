@@ -23,13 +23,12 @@ type Generator struct {
 	sound      []byte
 }
 
-func (g *Generator) Notify(conv *model.Conversation) (<-chan GeneratedSound, chan<- Request, error) {
+func (g *Generator) Notify(requests <-chan Request, conv *model.Conversation) (<-chan GeneratedSound, error) {
 	data, err := g.generateSound(500, 300*time.Millisecond)
 	if err != nil {
-		return nil, nil, fmt.Errorf("generate sound: %w", err)
+		return nil, fmt.Errorf("generate sound: %w", err)
 	}
 
-	requests := make(chan Request, 10)
 	ch := make(chan GeneratedSound, 10)
 
 	go func() {
@@ -52,7 +51,7 @@ func (g *Generator) Notify(conv *model.Conversation) (<-chan GeneratedSound, cha
 		}
 	}()
 
-	return ch, requests, nil
+	return ch, nil
 }
 
 func (g *Generator) generateSound(frequency float64, duration time.Duration) ([]byte, error) {

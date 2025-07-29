@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,21 +36,27 @@ type Completer struct {
 	MaxConcurrentToolCalls int
 	HTTPClient             HTTPDoer
 	Functions              functions.FunctionProvider
+
+	llm *openai.LLM
 }
 
 type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation) (<-chan ResponseChunk, error) {
-	llm, err := openai.New(
-		openai.WithHTTPClient(c.HTTPClient),
-		openai.WithBaseURL(c.ServerURL+"/v1"),
-		openai.WithToken(c.APIKey),
-		openai.WithModel(c.Model),
-	)
-	if err != nil {
-		return nil, err
+func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation) (<-chan ResponseChunk, error) {
+	if c.llm == nil {
+		llm, err := openai.New(
+			openai.WithHTTPClient(c.HTTPClient),
+			openai.WithBaseURL(c.ServerURL+"/v1"),
+			openai.WithToken(c.APIKey),
+			openai.WithModel(c.Model),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		c.llm = llm
 	}
 
 	ch := make(chan ResponseChunk, 50)
@@ -59,13 +66,18 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 
 		fns := functions.NewCallLoopPreventingProvider(functions.Noop())
 
-		err := c.createChatCompletion(ctx, llm, conv.RequestCounter(), fns, conv, ch)
+		err := c.createChatCompletion(ctx, conv.RequestCounter(), fns, conv, ch)
 		if err != nil {
 			slog.Error(fmt.Sprintf("chat completion: %s", err))
 		}
 
+		ch <- ResponseChunk{
+			Type:       model.MessageTypeEnd,
+			RequestNum: conv.RequestCounter(),
+		}
+
 		for req := range requests {
-			err := c.completeChat(ctx, llm, req.RequestNum, conv, ch)
+			err := c.ChatCompletion(ctx, req.RequestNum, conv, ch)
 			if err != nil {
 				slog.Error(fmt.Sprintf("chat completion: %s", err))
 
@@ -75,6 +87,8 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 					Text:       fmt.Sprintf("ERROR: Chat completion failed: %s", err),
 				}
 			}
+
+			slog.Debug("end of response")
 
 			ch <- ResponseChunk{
 				Type:       model.MessageTypeEnd,
@@ -86,7 +100,7 @@ func (c *Completer) ChatCompletion(ctx context.Context, requests <-chan ChatComp
 	return ch, nil
 }
 
-func (c *Completer) completeChat(ctx context.Context, llm *openai.LLM, reqNum int64, conv *model.Conversation, ch chan<- ResponseChunk) error {
+func (c *Completer) ChatCompletion(ctx context.Context, reqNum int64, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	fns := functions.NewCallLoopPreventingProvider(c.Functions)
 	turn := 0
 
@@ -94,23 +108,27 @@ func (c *Completer) completeChat(ctx context.Context, llm *openai.LLM, reqNum in
 		turn++
 
 		if c.MaxTurns > 0 && turn > c.MaxTurns {
-			break
+			slog.Warn(fmt.Sprintf("maximum LLM conversation turns of %d was exceeded for the request", c.MaxTurns))
+
+			fns = functions.NewCallLoopPreventingProvider(functions.Noop())
 		}
 
-		err := c.createChatCompletion(ctx, llm, reqNum, fns, conv, ch)
+		err := c.createChatCompletion(ctx, reqNum, fns, conv, ch)
 		if err == nil {
 			return nil
+		}
+
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		if _, ok := err.(*reconcileError); !ok {
 			slog.Warn(err.Error())
 		}
 	}
-
-	return fmt.Errorf("maximum LLM conversation turns of %d was exceeded for the request", c.MaxTurns)
 }
 
-func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
+func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	if conv.RequestCounter() > reqNum {
 		return nil // skip outdated request (user requested something else)
 	}
@@ -134,22 +152,43 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 
 	printMessages(messages)
 
-	parser := responseParser{
-		Cancel:              cancel,
-		ReqNum:              reqNum,
-		Conversation:        conv,
-		StripResponsePrefix: c.StripResponsePrefix,
-		Ch:                  ch,
-	}
-
 	// TODO: fix streaming when function support is also enabled.
 	// Currently LocalAI does not stream the response when function support is enabled.
 	// See https://github.com/mudler/LocalAI/issues/1187
 	// While this doesn't break the app, it increases the response latency significantly.
 
-	resp, err := llm.GenerateContent(ctx,
+	// TODO: add function to let the LLM say something to the user while using tools.
+	// On the the one hand this might provide good UX when the LLM provides dynamic feedback (alternative to a reasoning argument).
+	// On the other hand the client could require the LLM to always respond with a function call - no special cases, no accidental reading of function call JSON aloud and function call JSON would always be parsed via StreamingFunc.
+
+	var buf bytes.Buffer
+
+	streamingFunc := func(_ context.Context, chunk []byte) error {
+		c.emitResponseChunk(string(chunk), reqNum, ch)
+		return nil
+	}
+	if len(llmFunctions) > 0 {
+		streamingFunc = func(_ context.Context, chunk []byte) error {
+			buf.Write(chunk)
+			return nil
+		}
+	}
+
+	streamingFuncWrapper := func(ctx context.Context, chunk []byte) error {
+		if conv.RequestCounter() > reqNum {
+			// Cancel response stream if request is outdated (user requested something else)
+			cancel()
+			return nil
+		}
+
+		slog.Debug(fmt.Sprintf("received chunk %q", string(chunk)))
+
+		return streamingFunc(ctx, chunk)
+	}
+
+	resp, err := c.llm.GenerateContent(ctx,
 		messages,
-		llms.WithStreamingFunc(parser.ConsumeChunk),
+		llms.WithStreamingFunc(streamingFuncWrapper),
 		//llms.WithTools(tools),
 		llms.WithFunctions(llmFunctions),
 		llms.WithTemperature(c.Temperature),
@@ -172,7 +211,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 		doneCh := make(chan error)
 		inputCh := make(chan llms.ToolCall)
 
-		toolCalls, err := parseToolCalls(parser.buf.String())
+		toolCalls, err := parseToolCalls(buf.String())
 		if err != nil {
 			return err
 		}
@@ -199,7 +238,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 
 		for _, toolCall := range toolCalls {
 			if toolCall.Type != "function" || toolCall.FunctionCall == nil {
-				slog.Warn(fmt.Sprintf("ignoring unsupported tool type that was requested by the LLM: %s", toolCall.Type))
+				slog.Warn(fmt.Sprintf("ignoring unsupported tool call: %#v", toolCall))
 				continue
 			}
 
@@ -228,9 +267,18 @@ func (c *Completer) createChatCompletion(ctx context.Context, llm *openai.LLM, r
 		return &reconcileError{fmt.Errorf("needs reconciliation")}
 	}
 
-	parser.Complete()
+	// Yield AI response when it doesn't need to call tools (anymore)
+	c.emitResponseChunk(buf.String(), reqNum, ch)
 
 	return nil
+}
+
+func (c *Completer) emitResponseChunk(chunk string, reqNum int64, ch chan<- ResponseChunk) {
+	ch <- ResponseChunk{
+		Type:       model.MessageTypeChunk,
+		RequestNum: reqNum,
+		Text:       strings.TrimPrefix(chunk, c.StripResponsePrefix),
+	}
 }
 
 type reconcileError struct {

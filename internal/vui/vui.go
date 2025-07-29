@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
+	//"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions/docker"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/soundgen"
@@ -25,6 +26,7 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		cancel()
 	}()
 
+	//delegationKeyword := "D3LEG4TE"
 	systemPrompt := fmt.Sprintf(`You are a helpful assistant.
 		Your name is %[1]s.
 		Keep your responses short and concise.
@@ -32,10 +34,14 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		When the user tells you to be quiet, you should answer with "Okay".
 		However, next time the user says something, you should engage in the conversation again.
 		Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
-		`, cfg.WakeWord)
+		`, cfg.WakeWord /*, delegationKeyword*/)
+	//In case the user asks you to use an external tool, confirm the action by saying e.g. 'Okay.'.
+	//In case the user asks you to use an external tool, provide a short confirming response such as 'Okay.' followed by '%[2]s' on a new line followed by a prompt for another AI with tool access to finish the response.
+	//You can access external tools as well as the internet by returning a prompt after an intermediate response as quick user feedback, separated by '%[2]s' on a new line.
+	//To use an external tool or access the internet, end your response with a new line followed by '%[2]s' followed by the prompt that will fed into another AI with tool access to answer the user request on your behalf.
 	//systemPrompt := "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!"
 	conversation := model.NewConversation(systemPrompt)
-	functions := &docker.Functions{
+	tools := &docker.Functions{
 		FunctionDefinitions: cfg.Functions,
 	}
 	wakewordFilter := &wakeword.Filter{
@@ -50,7 +56,7 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		},
 	}
 	requester := &chat.Requester{}
-	chatCompleter := &chat.Completer{
+	chatCompleter := chat.Completer{
 		ServerURL:              cfg.ServerURL,
 		APIKey:                 cfg.APIKey,
 		Model:                  cfg.ChatModel,
@@ -61,8 +67,14 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		MaxTurns:               5,
 		MaxConcurrentToolCalls: 5,
 		HTTPClient:             httpClient,
-		Functions:              functions,
+		Functions:              tools,
 	}
+	/*conversationAgent := &chat.ConversationAgent{
+		Completer: chatCompleter,
+		//DelegationKeyword: delegationKeyword,
+		ToolAgent: chatCompleter,
+	}
+	conversationAgent.Completer.Functions = functions.Noop()*/
 	speechGen := &tts.SpeechGenerator{
 		Service: &tts.Client{
 			URL:    cfg.ServerURL,
@@ -76,24 +88,28 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 
 	transcriptions := transcriber.Transcribe(ctx, input)
 	userRequests := wakewordFilter.FilterByWakeWord(transcriptions)
-	notificationSounds, notificationSink, err := soundGen.Notify(conversation)
-	if err != nil {
-		close(notificationSink)
-		return nil, nil, err
-	}
-
 	userRequestsConverted := chat.ToAudioMessageStreamWithoutAudioData(userRequests)
-	completionRequests := requester.AddUserRequestsToConversation(ctx, userRequestsConverted, notificationSink, conversation)
+	completionRequests, notifications := requester.AddUserRequestsToConversation(ctx, userRequestsConverted, conversation)
 
-	responses, err := chatCompleter.ChatCompletion(ctx, completionRequests, conversation)
+	responses, err := chatCompleter.Run(ctx, completionRequests, conversation)
 	if err != nil {
-		close(notificationSink)
 		cancel()
 		for _ = range responses {
 		}
 		return nil, nil, err
 	}
 
+	notificationSounds, err := soundGen.Notify(notifications, conversation)
+	if err != nil {
+		cancel()
+		for _ = range responses {
+		}
+		for _ = range notificationSounds {
+		}
+		return nil, nil, err
+	}
+
+	responses = chat.ChunksToSentences(responses)
 	speeches := speechGen.GenerateAudio(ctx, responses, conversation)
 	audioOutput := chat.MergeChannels(speeches, notificationSounds)
 

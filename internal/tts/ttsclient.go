@@ -16,9 +16,9 @@ type Client struct {
 	APIKey string
 }
 
-func (c *Client) GenerateAudio(ctx context.Context, args Request) (io.ReadCloser, error) {
+func (c *Client) GenerateAudio(ctx context.Context, msg string) (io.ReadCloser, error) {
 	params := map[string]interface{}{
-		"input": args.Text,
+		"input": msg,
 		"model": c.Model,
 	}
 

@@ -14,8 +14,9 @@ type Message = model.AudioMessage
 type Requester struct {
 }
 
-func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests <-chan Message, notifications chan<- soundgen.Request, conv *model.Conversation) <-chan ChatCompletionRequest {
-	ch := make(chan ChatCompletionRequest)
+func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests <-chan Message, conv *model.Conversation) (<-chan ChatCompletionRequest, <-chan soundgen.Request) {
+	ch := make(chan ChatCompletionRequest, 50)
+	notifications := make(chan soundgen.Request, 50)
 
 	go func() {
 		defer close(ch)
@@ -44,7 +45,7 @@ func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests 
 		}
 	}()
 
-	return ch
+	return ch, notifications
 }
 
 func ToAudioMessageStreamWithoutAudioData(requests <-chan model.Message) <-chan model.AudioMessage {
