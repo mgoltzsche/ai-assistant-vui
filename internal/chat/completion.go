@@ -1,12 +1,10 @@
 package chat
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -101,7 +99,17 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 }
 
 func (c *Completer) ChatCompletion(ctx context.Context, reqNum int64, conv *model.Conversation, ch chan<- ResponseChunk) error {
+	// TODO: align [SAY]
 	fns := functions.NewCallLoopPreventingProvider(c.Functions)
+	// TODO: add function to let the LLM say something to the user while using tools?
+	// On the the one hand this might provide good UX when the LLM provides dynamic feedback (alternative to a reasoning argument).
+	// On the other hand the client could require the LLM to always respond with a function call - no special cases, no accidental reading of function call JSON aloud and function call JSON would always be parsed via StreamingFunc.
+	// => turned out not to be great since latency was increased the often the AI said that it would look something up without actually doing it.
+	/*fns := functions.NewCallLoopPreventingProvider(&ResponseFunctionProvider{
+		Delegate:   c.Functions,
+		RequestNum: reqNum,
+		Ch:         ch,
+	})*/
 	turn := 0
 
 	for {
@@ -157,11 +165,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 	// See https://github.com/mudler/LocalAI/issues/1187
 	// While this doesn't break the app, it increases the response latency significantly.
 
-	// TODO: add function to let the LLM say something to the user while using tools.
-	// On the the one hand this might provide good UX when the LLM provides dynamic feedback (alternative to a reasoning argument).
-	// On the other hand the client could require the LLM to always respond with a function call - no special cases, no accidental reading of function call JSON aloud and function call JSON would always be parsed via StreamingFunc.
-
-	var buf bytes.Buffer
+	var toolCalls []aiToolCall
 
 	streamingFunc := func(_ context.Context, chunk []byte) error {
 		c.emitResponseChunk(string(chunk), reqNum, ch)
@@ -169,7 +173,24 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 	}
 	if len(llmFunctions) > 0 {
 		streamingFunc = func(_ context.Context, chunk []byte) error {
-			buf.Write(chunk)
+			if chunkStr := string(chunk); !strings.HasPrefix(chunkStr, "[{") {
+				c.emitResponseChunk(chunkStr, reqNum, ch)
+
+				return nil
+			}
+
+			addToolCalls := make([]aiToolCall, 0, 1)
+
+			err := json.Unmarshal(chunk, &addToolCalls)
+			if err != nil {
+				slog.Warn("failed to parse function calls from chunk", "err", err, "chunk", chunk)
+				c.emitResponseChunk(string(chunk), reqNum, ch)
+
+				return nil
+			}
+
+			toolCalls = append(toolCalls, addToolCalls...)
+
 			return nil
 		}
 	}
@@ -181,12 +202,16 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 			return nil
 		}
 
+		if len(chunk) == 0 {
+			return nil
+		}
+
 		slog.Debug(fmt.Sprintf("received chunk %q", string(chunk)))
 
 		return streamingFunc(ctx, chunk)
 	}
 
-	resp, err := c.llm.GenerateContent(ctx,
+	_, err = c.llm.GenerateContent(ctx,
 		messages,
 		llms.WithStreamingFunc(streamingFuncWrapper),
 		//llms.WithTools(tools),
@@ -207,14 +232,10 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 		return nil // skip outdated request (user requested something else)
 	}
 
-	if hasToolCalls(resp) {
+	if len(toolCalls) > 0 {
 		doneCh := make(chan error)
 		inputCh := make(chan llms.ToolCall)
-
-		toolCalls, err := parseToolCalls(buf.String())
-		if err != nil {
-			return err
-		}
+		toolCalls = mergeToolCalls(toolCalls)
 
 		concurrentCallNum := len(toolCalls)
 		if c.MaxConcurrentToolCalls > 0 && c.MaxConcurrentToolCalls < concurrentCallNum {
@@ -223,6 +244,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 
 		for i := 0; i < concurrentCallNum; i++ {
 			go func() {
+				// TODO: don't close channel before all goroutines finished writing - call tools synchronously anyway!
 				defer close(doneCh)
 
 				for toolCall := range inputCh {
@@ -242,7 +264,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 				continue
 			}
 
-			inputCh <- toolCall
+			inputCh <- toolCall.ToolCall()
 		}
 
 		close(inputCh)
@@ -267,9 +289,6 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 		return &reconcileError{fmt.Errorf("needs reconciliation")}
 	}
 
-	// Yield AI response when it doesn't need to call tools (anymore)
-	c.emitResponseChunk(buf.String(), reqNum, ch)
-
 	return nil
 }
 
@@ -283,37 +302,6 @@ func (c *Completer) emitResponseChunk(chunk string, reqNum int64, ch chan<- Resp
 
 type reconcileError struct {
 	error
-}
-
-func hasToolCalls(resp *llms.ContentResponse) bool {
-	for _, choice := range resp.Choices {
-		for _, toolCall := range choice.ToolCalls {
-			switch toolCall.Type {
-			case "function":
-				return true
-			default:
-				slog.Warn(fmt.Sprintf("ignoring unsupported tool type that was requested by the LLM: %s", toolCall.Type))
-			}
-		}
-	}
-
-	return false
-}
-
-func parseToolCalls(content string) ([]llms.ToolCall, error) {
-	// TODO: parse multiple
-	call, callID, err := parseFunctionCall(content)
-	if err != nil {
-		return nil, fmt.Errorf("parse function call: %w", err)
-	}
-
-	return []llms.ToolCall{
-		{
-			ID:           callID,
-			Type:         "function",
-			FunctionCall: call,
-		},
-	}, nil
 }
 
 func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
@@ -344,7 +332,9 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 			infos = infos[:1]
 		}
 
-		infos = append(infos, fmt.Sprintf("Let me use my %q tool.", call.Name))
+		// TODO: let it explain its rationale again? [SAY]
+		//infos = append(infos, fmt.Sprintf("Let me use my %q tool.", call.Name))
+		infos = []string{fmt.Sprintf("Let me use my %q tool.", call.Name)}
 
 		for _, sentence := range infos {
 			ch <- ResponseChunk{
@@ -425,7 +415,7 @@ func printMessages(messages []llms.MessageContent) {
 		msgs = append(msgs, fmt.Sprintf("\n\t%d. %s", i, content))
 	}
 
-	slog.Debug(fmt.Sprintf("Requesting chat completion for message history: %s", strings.Join(msgs, "")))
+	slog.Debug(fmt.Sprintf("requesting chat completion for message history: %s", strings.Join(msgs, "")))
 }
 
 func validateFunctionCallArgs(args map[string]any, paramDefinition llms.FunctionDefinition) error {
@@ -438,58 +428,52 @@ func validateFunctionCallArgs(args map[string]any, paramDefinition llms.Function
 	return nil
 }
 
-// parseFunctionCall parses a single function call from multiple function call JSON arrays.
-// This is because the LLM genereates responses like this:
-//
-//	[{"id":"108784cf-5325-4fe9-974f-9bbc0210d457","type":"function","function":{"name":"getCurrentWeather","arguments":""}}]
-//	[{"id":"108784cf-5325-4fe9-974f-9bbc0210d457","type":"function","function":{"name":"","arguments":"{\"location\":\"Berlin, DE\",\"rationale\":\"Getting the current weather in the specified location.\",\"unit\":\"celsius\"}"}}]
-func parseFunctionCall(content string) (*llms.FunctionCall, string, error) {
-	call := llms.FunctionCall{}
-	id := ""
-	dec := json.NewDecoder(strings.NewReader(content))
+func mergeToolCalls(calls []aiToolCall) []aiToolCall {
+	callMap := make(map[string]aiToolCall, len(calls))
+	ids := make([]string, 0, len(calls))
+	result := make([]aiToolCall, 0, len(calls))
 
-	for {
-		aiRequests := make([]aiRequest, 0, 1)
-
-		err := dec.Decode(&aiRequests)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			return nil, "", err
+	for _, call := range calls {
+		if call.FunctionCall == nil {
+			continue
 		}
 
-		for _, req := range aiRequests {
-			if req.Type != "function" || req.Function == nil {
-				continue
+		if lastCall, ok := callMap[call.ID]; ok {
+			if lastCall.FunctionCall.Name != "" {
+				call.FunctionCall.Name = lastCall.FunctionCall.Name
 			}
-
-			if id != "" && id != req.ID {
-				break
+			if lastCall.FunctionCall.Arguments != "" {
+				call.FunctionCall.Arguments = lastCall.FunctionCall.Arguments
 			}
-
-			id = req.ID
-
-			if name := req.Function.Name; name != "" {
-				call.Name = name
-			}
-
-			call.Arguments = req.Function.Arguments
+		} else {
+			ids = append(ids, call.ID)
 		}
+
+		callMap[call.ID] = call
 	}
 
-	if call.Name != "" {
-		return &call, id, nil
+	for _, id := range ids {
+		result = append(result, callMap[id])
 	}
 
-	return nil, "", nil
+	return result
 }
 
-type aiRequest struct {
-	ID       string        `json:"id"`
-	Type     string        `type:"type"`
-	Function *functionCall `json:"function,omitempty"`
+type aiToolCall struct {
+	ID           string        `json:"id"`
+	Type         string        `type:"type"`
+	FunctionCall *functionCall `json:"function,omitempty"`
+}
+
+func (c *aiToolCall) ToolCall() llms.ToolCall {
+	return llms.ToolCall{
+		ID:   c.ID,
+		Type: c.Type,
+		FunctionCall: &llms.FunctionCall{
+			Name:      c.FunctionCall.Name,
+			Arguments: c.FunctionCall.Arguments,
+		},
+	}
 }
 
 type functionCall struct {
