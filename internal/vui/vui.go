@@ -58,17 +58,16 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 	}
 	requester := &chat.Requester{}
 	chatCompleter := chat.Completer{
-		ServerURL:              cfg.ServerURL,
-		APIKey:                 cfg.APIKey,
-		Model:                  cfg.ChatModel,
-		Temperature:            cfg.Temperature,
-		FrequencyPenalty:       1.5,
-		MaxTokens:              0,
-		StripResponsePrefix:    fmt.Sprintf("%s:", wakewordFilter.WakeWord),
-		MaxTurns:               5,
-		MaxConcurrentToolCalls: 5,
-		HTTPClient:             httpClient,
-		Functions:              tools,
+		ServerURL:           cfg.ServerURL,
+		APIKey:              cfg.APIKey,
+		Model:               cfg.ChatModel,
+		Temperature:         cfg.Temperature,
+		FrequencyPenalty:    1.5,
+		MaxTokens:           0,
+		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
+		MaxTurns:            5,
+		HTTPClient:          httpClient,
+		Functions:           tools,
 	}
 	/*conversationAgent := &chat.ConversationAgent{
 		Completer: chatCompleter,

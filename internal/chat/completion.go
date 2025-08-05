@@ -23,17 +23,16 @@ type ChatCompletionRequest struct {
 }
 
 type Completer struct {
-	ServerURL              string
-	APIKey                 string
-	Model                  string
-	Temperature            float64
-	FrequencyPenalty       float64
-	MaxTokens              int
-	StripResponsePrefix    string
-	MaxTurns               int
-	MaxConcurrentToolCalls int
-	HTTPClient             HTTPDoer
-	Functions              functions.FunctionProvider
+	ServerURL           string
+	APIKey              string
+	Model               string
+	Temperature         float64
+	FrequencyPenalty    float64
+	MaxTokens           int
+	StripResponsePrefix string
+	MaxTurns            int
+	HTTPClient          HTTPDoer
+	Functions           functions.FunctionProvider
 
 	llm *openai.LLM
 }
@@ -228,62 +227,23 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 		return err
 	}
 
-	if conv.RequestCounter() > reqNum {
-		return nil // skip outdated request (user requested something else)
-	}
-
 	if len(toolCalls) > 0 {
-		doneCh := make(chan error)
-		inputCh := make(chan llms.ToolCall)
 		toolCalls = mergeToolCalls(toolCalls)
 
-		concurrentCallNum := len(toolCalls)
-		if c.MaxConcurrentToolCalls > 0 && c.MaxConcurrentToolCalls < concurrentCallNum {
-			concurrentCallNum = c.MaxConcurrentToolCalls
-		}
-
-		for i := 0; i < concurrentCallNum; i++ {
-			go func() {
-				// TODO: don't close channel before all goroutines finished writing - call tools synchronously anyway!
-				defer close(doneCh)
-
-				for toolCall := range inputCh {
-					err := handleToolCall(ctx, toolCall, reqNum, fns, conv, ch)
-					if err != nil {
-						doneCh <- fmt.Errorf("failed to call function %q: %w", toolCall.FunctionCall.Name, err)
-					}
-
-					doneCh <- nil
-				}
-			}()
-		}
-
-		for _, toolCall := range toolCalls {
-			if toolCall.Type != "function" || toolCall.FunctionCall == nil {
-				slog.Warn(fmt.Sprintf("ignoring unsupported tool call: %#v", toolCall))
+		for _, call := range toolCalls {
+			if call.Type != "function" || call.FunctionCall == nil {
+				slog.Warn(fmt.Sprintf("ignoring unsupported tool call: %#v", call))
 				continue
 			}
 
-			inputCh <- toolCall.ToolCall()
-		}
-
-		close(inputCh)
-
-		failed := 0
-		total := 0
-
-		for err := range doneCh {
-			total++
-
-			if err != nil {
-				slog.Warn(err.Error())
-
-				failed++
+			if conv.RequestCounter() > reqNum {
+				return nil // skip outdated request (user requested something else)
 			}
-		}
 
-		if failed > 0 && failed == total {
-			return fmt.Errorf("all tool calls failed")
+			err := handleToolCall(ctx, call.ToolCall(), reqNum, fns, conv, ch)
+			if err != nil {
+				return fmt.Errorf("failed to call function %q: %w", call.FunctionCall.Name, err)
+			}
 		}
 
 		return &reconcileError{fmt.Errorf("needs reconciliation")}
