@@ -11,32 +11,6 @@ temperature: 0.7
 wakeWord: Computer
 
 functions:
-- name: calculator
-  description: Perform a mathematical calculation.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters
-      input:
-        type: string
-        description: |
-          The mathematical formular in form of whitespace-separated numbers and operators.
-          Numbers are formatted using english decimal notation.
-          Operators are as follows: + - * / %.
-          Example expression: 6 / 2 + 5
-    required: ["rationale", "input"]
-  image: alpine:3.21
-  command: /bin/sh
-  args:
-  - -euc
-  - |
-    echo "$PARAMETER_INPUT" | sed -E \
-      -e 's/([0-9\.,]+)/\1 /g' \
-      -e 's/ (\+|-|\/|%)/ \1 /g' \
-      -e 's/ +/ /g' | xargs expr
-
 - name: getCurrentWeather
   description: Get the current weather in a given location.
   parameters:
