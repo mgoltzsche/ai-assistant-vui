@@ -1,7 +1,6 @@
 package functions
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 )
@@ -25,18 +24,7 @@ func NewCallLoopPreventingProvider(p FunctionProvider) *CallLoopPreventingProvid
 }
 
 func (p *CallLoopPreventingProvider) IsFunctionCallAllowed(name string, args map[string]any) (bool, error) {
-	argsCopy := make(map[string]any, len(args))
-	for k, v := range args {
-		if k != "rationale" {
-			argsCopy[k] = v
-		}
-	}
-	b, err := json.Marshal(argsCopy)
-	if err != nil {
-		return false, fmt.Errorf("marshal %s function call args: %w", name, err)
-	}
-
-	callSignature := fmt.Sprintf("%s(%s)", name, string(b))
+	callSignature := name
 
 	if _, alreadyCalled := p.calls[callSignature]; alreadyCalled {
 		slog.Warn(fmt.Sprintf("disabling %s tool temporarily due to duplicate call", name))
