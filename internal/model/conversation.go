@@ -173,8 +173,8 @@ func (c *Conversation) addMessage(msg conversationMessage) bool {
 func (c *Conversation) dropPreviousMessages() {
 	filtered := make([]conversationMessage, 0, len(c.messages)+1)
 
-	for _, msg := range c.messages {
-		if msg.RequestNum < 2 || msg.RequestNum == c.requestCounter {
+	for i, msg := range c.messages {
+		if i == 0 || msg.RequestNum == c.requestCounter {
 			filtered = append(filtered, msg)
 		}
 	}
@@ -184,13 +184,13 @@ func (c *Conversation) dropPreviousMessages() {
 
 func (c *Conversation) Messages() []llms.MessageContent {
 	msgs := c.messages
-	nsgContents := make([]llms.MessageContent, len(msgs))
+	msgContents := make([]llms.MessageContent, len(msgs))
 
 	for i, msg := range msgs {
-		nsgContents[i] = msg.MessageContent
+		msgContents[i] = msg.MessageContent
 	}
 
-	return nsgContents
+	return msgContents
 }
 
 func (c *Conversation) RequestMessages() []llms.MessageContent {

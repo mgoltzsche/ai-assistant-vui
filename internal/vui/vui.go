@@ -26,15 +26,13 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		cancel()
 	}()
 
-	//delegationKeyword := "D3LEG4TE"
 	systemPrompt := fmt.Sprintf(`You are a helpful assistant.
 		Your name is %[1]s.
 		Keep your responses short and concise.
 		You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
 		When the user tells you to be quiet, you should answer with "Okay".
 		However, next time the user says something, you should engage in the conversation again.
-		Initially, start the conversation by asking the user how you can help them and explaining that she must say '%[1]s' in order to address you.
-		`, cfg.WakeWord /*, delegationKeyword*/)
+		`, cfg.WakeWord)
 	//You must speak to the user using the 'say' function. Before and after calling any other function, call the 'say' function to tell the user what you're doing!
 	//In case the user asks you to use an external tool, confirm the action by saying e.g. 'Okay.'.
 	//In case the user asks you to use an external tool, provide a short confirming response such as 'Okay.' followed by '%[2]s' on a new line followed by a prompt for another AI with tool access to finish the response.
@@ -68,6 +66,7 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		MaxTurns:            5,
 		HTTPClient:          httpClient,
 		Functions:           tools,
+		IntroPrompt:         fmt.Sprintf("Initially, start the conversation by asking the user how you can help them and explaining that she must say '%s' in order to address you.", cfg.WakeWord),
 	}
 	/*conversationAgent := &chat.ConversationAgent{
 		Completer: chatCompleter,

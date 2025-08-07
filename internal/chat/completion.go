@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
@@ -33,6 +34,7 @@ type Completer struct {
 	MaxTurns            int
 	HTTPClient          HTTPDoer
 	Functions           functions.FunctionProvider
+	IntroPrompt         string
 
 	llm *openai.LLM
 }
@@ -61,22 +63,34 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 	go func() {
 		defer close(ch)
 
-		fns := functions.NewCallLoopPreventingProvider(functions.Noop())
+		if c.IntroPrompt != "" {
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
 
-		err := c.createChatCompletion(ctx, conv.RequestCounter(), fns, conv, ch)
-		if err != nil {
-			slog.Error(fmt.Sprintf("chat completion: %s", err))
-		}
+			defer wg.Wait()
 
-		ch <- ResponseChunk{
-			Type:       model.MessageTypeEnd,
-			RequestNum: conv.RequestCounter(),
+			go func() {
+				defer wg.Done()
+				prompt := fmt.Sprintf("%s\n%s", conv.Messages()[0].Parts[0], c.IntroPrompt)
+				welcomeConv := model.NewConversation(prompt)
+				fns := functions.NewCallLoopPreventingProvider(functions.Noop())
+
+				err := c.createChatCompletion(ctx, conv.RequestCounter(), fns, welcomeConv, ch)
+				if err != nil {
+					slog.Error("failed to generate greeting", "err", err)
+				}
+
+				ch <- ResponseChunk{
+					Type:       model.MessageTypeEnd,
+					RequestNum: conv.RequestCounter(),
+				}
+			}()
 		}
 
 		for req := range requests {
 			err := c.ChatCompletion(ctx, req.RequestNum, conv, ch)
 			if err != nil {
-				slog.Error(fmt.Sprintf("chat completion: %s", err))
+				slog.Error("chat completion failed", "err", err)
 
 				ch <- ResponseChunk{
 					Type:       model.MessageTypeChunk,
@@ -158,11 +172,6 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 	messages := conv.Messages()
 
 	printMessages(messages)
-
-	// TODO: fix streaming when function support is also enabled.
-	// Currently LocalAI does not stream the response when function support is enabled.
-	// See https://github.com/mudler/LocalAI/issues/1187
-	// While this doesn't break the app, it increases the response latency significantly.
 
 	var toolCalls []aiToolCall
 
