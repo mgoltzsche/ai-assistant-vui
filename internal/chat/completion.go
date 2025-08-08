@@ -161,7 +161,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 
 	functions, err := fns.Functions()
 	if err != nil {
-		return fmt.Errorf("get available functions: %w", err)
+		return fmt.Errorf("get available tools: %w", err)
 	}
 
 	llmFunctions := make([]llms.FunctionDefinition, len(functions))
@@ -191,7 +191,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 
 			err := json.Unmarshal(chunk, &addToolCalls)
 			if err != nil {
-				slog.Warn("failed to parse function calls from chunk", "err", err, "chunk", chunk)
+				slog.Warn("failed to parse tool calls from chunk", "err", err, "chunk", chunk)
 				c.emitResponseChunk(string(chunk), reqNum, ch)
 
 				return nil
@@ -251,7 +251,7 @@ func (c *Completer) createChatCompletion(ctx context.Context, reqNum int64, fns 
 
 			err := handleToolCall(ctx, call.ToolCall(), reqNum, fns, conv, ch)
 			if err != nil {
-				return fmt.Errorf("failed to call function %q: %w", call.FunctionCall.Name, err)
+				return fmt.Errorf("failed to call tool %q: %w", call.FunctionCall.Name, err)
 			}
 		}
 
@@ -280,18 +280,18 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 	if call.Arguments != "" {
 		err := json.Unmarshal([]byte(call.Arguments), &args)
 		if err != nil {
-			return fmt.Errorf("parse function call arguments: %w", err)
+			return fmt.Errorf("parse tool call arguments: %w", err)
 		}
 	}
 
 	callAllowed, err := fns.IsFunctionCallAllowed(call.Name, args)
 	if err != nil {
-		return fmt.Errorf("deduplicate function call: %w", err)
+		return fmt.Errorf("deduplicate tool call: %w", err)
 	}
 
 	if !callAllowed {
 		// Re-request chat completion without the now banned tool
-		return fmt.Errorf("repeating function call %q is not allowed", call.Name)
+		return fmt.Errorf("repeating tool call %q is not allowed", call.Name)
 	}
 
 	if rationale, ok := args["rationale"]; ok && rationale != "" {
@@ -317,7 +317,7 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 
 	result, err := callTool(ctx, toolCall, args, fns)
 	if err != nil {
-		msg := fmt.Sprintf("ERROR: failed to call function %q: %s", call.Name, err)
+		msg := fmt.Sprintf("ERROR: failed to call tool %q: %s", call.Name, err)
 		result = msg
 
 		slog.Warn(msg)
@@ -354,7 +354,7 @@ func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns 
 	functionCallResult = strings.TrimSpace(functionCallResult)
 
 	if functionCallResult == "" {
-		return "", errors.New("function  call returned empty result")
+		return "", errors.New("tool call returned empty result")
 	}
 
 	result := ""
@@ -362,7 +362,7 @@ func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns 
 		result = strings.ReplaceAll("\n"+functionCallResult, "\n", "\n\t")
 	}
 
-	slog.Debug(fmt.Sprintf("function %s result: %s", call.FunctionCall.Name, result))
+	slog.Debug(fmt.Sprintf("tool %s result: %s", call.FunctionCall.Name, result))
 
 	return result, nil
 }
