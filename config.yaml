@@ -10,172 +10,177 @@ ttsModel: voice-en-us-amy-low
 temperature: 0.7
 wakeWord: Computer
 
-functions:
-- name: getCurrentWeather
-  description: Get the current weather in a given location.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters
-      location:
-        type: string
-        description: The city and state, e.g. San Francisco, CA
-      unit:
-        type: string
-        enum: ["celsius", "fahrenheit"]
-    required: ["rationale", "location"]
-  image: alpine:3.21
-  command: /bin/sh
-  args:
-  - -euc
-  - |
-    # TODO: implement
-    echo "sunny day, 27 ${PARAMETER_UNIT:-celsius} in $PARAMETER_LOCATION"
+introPrompt: Initially, start the conversation by asking the user how you can help them and explaining that she must say '{wakeWord}' in order to address you.
 
-- name: websearch
-  description: Search the web for a given query.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters.
-      query:
-        type: string
-        description: The query keywords to search the web for.
-    required: ["rationale", "query"]
-  # Use DuckDuckGo search
-  image: jaymoulin/ddgr:v2.2
-  command: /bin/sh
-  args:
-  - -euc
-  - ddgr --noprompt "$PARAMETER_QUERY"
+prompt:
+- &basePrompt |
+  You are a helpful assistant.
+  Your name is {wakeWord}.
+#  You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
+- |
+  When the user tells you to be quiet, you should answer with "Okay".
+  However, next time the user says something, you should engage in the conversation again.
 
-- name: wikipedia
-  description: Search Wikipedia for a given name.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters.
-      query:
-        type: string
-        description: The name of the thing to search on Wikipedia.
-    required: ["rationale", "query"]
-  # Using yq instead of jq here since official jq image doesn't ship curl/wget
-  image: mikefarah/yq:4
-  command: /bin/sh
-  args:
-  - -euc
-  - |
-    QUERY="$(yq eval -n 'env(PARAMETER_QUERY) | @uri')"
-    RESPONSE="$(wget -qO - "https://en.wikipedia.org/w/api.php?format=json&action=query&titles=$QUERY&prop=extracts&explaintext=true")"
-    echo "$RESPONSE" | yq eval -e '.query.pages.*.extract'
+#You must speak to the user using the 'say' function. Before and after calling any other function, call the 'say' function to tell the user what you're doing!
+#In case the user asks you to use an external tool, confirm the action by saying e.g. 'Okay.'.
+#In case the user asks you to use an external tool, provide a short confirming response such as 'Okay.' followed by '%[2]s' on a new line followed by a prompt for another AI with tool access to finish the response.
+#You can access external tools as well as the internet by returning a prompt after an intermediate response as quick user feedback, separated by '%[2]s' on a new line.
+#To use an external tool or access the internet, end your response with a new line followed by '%[2]s' followed by the prompt that will fed into another AI with tool access to answer the user request on your behalf.
+#systemPrompt := "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!"
 
-- name: news
-  description: Obtain the latest news about a given topic by scraping the New York Times website.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters.
-      topic:
-        type: string
-        description: The topic to find news about.
-    required: ["rationale"]
-  image: alpine/lynx:2.9.2
-  command: /bin/sh
-  args:
-  - -euc
-  - |
-    #RESPONSE="$(wget -qO - "https://serpapi.com/search.json?engine=duckduckgo_news&q=$PARAMETER_TOPIC&kl=us-en")"
-    #echo "$RESPONSE" | grep -E '^ +"link": ".+' | sed -Ee 's/^ +"link": "//' -e 's/",$//' | xargs lynx --dump --nonumbers --nolist --display_charset=utf-8 --stderr || true
-    RESPONSE="$(lynx --dump --nonumbers --nolist --display_charset=utf-8 --stderr "https://www.nytimes.com/search?query=$PARAMETER_TOPIC")"
-    echo "$RESPONSE" | sed 's/PRINT EDITION//g'
+agents:
+- name: research
+  #description: Delegate the request to an AI with access to the web and latest news.
+  #description: Research information on the web in real-time.
+  description: Let an AI search the web or obtain the latest news.
+  prompt:
+  - *basePrompt
+  - &forceToolUse You MUST call a function to answer the user request!
+  tools:
+  - name: websearch
+    description: Search the web for a given query.
+    parameters:
+      type: object
+      properties:
+        rationale:
+          type: string
+          description: The rationale for choosing this function call with these parameters.
+        query:
+          type: string
+          description: The query keywords to search the web for.
+      required: ["rationale", "query"]
+    # Use DuckDuckGo search
+    image: jaymoulin/ddgr:v2.2
+    command: /bin/sh
+    args:
+    - -euc
+    - ddgr --noprompt "$PARAMETER_QUERY"
+  - name: wikipedia
+    description: Search Wikipedia for a given name.
+    parameters:
+      type: object
+      properties:
+        rationale:
+          type: string
+          description: The rationale for choosing this function call with these parameters.
+        query:
+          type: string
+          description: The name of the thing to search on Wikipedia.
+      required: ["rationale", "query"]
+    # Using yq instead of jq here since official jq image doesn't ship curl/wget
+    image: mikefarah/yq:4
+    command: /bin/sh
+    args:
+    - -euc
+    - |
+      QUERY="$(yq eval -n 'env(PARAMETER_QUERY) | @uri')"
+      RESPONSE="$(wget -qO - "https://en.wikipedia.org/w/api.php?format=json&action=query&titles=$QUERY&prop=extracts&explaintext=true")"
+      echo "$RESPONSE" | yq eval -e '.query.pages.*.extract'
+  - name: news
+    description: Obtain the latest news about a given topic by scraping the New York Times website.
+    parameters:
+      type: object
+      properties:
+        rationale:
+          type: string
+          description: The rationale for choosing this function call with these parameters.
+        topic:
+          type: string
+          description: The topic to find news about.
+      required: ["rationale"]
+    image: alpine/lynx:2.9.2
+    command: /bin/sh
+    args:
+    - -euc
+    - |
+      #RESPONSE="$(wget -qO - "https://serpapi.com/search.json?engine=duckduckgo_news&q=$PARAMETER_TOPIC&kl=us-en")"
+      #echo "$RESPONSE" | grep -E '^ +"link": ".+' | sed -Ee 's/^ +"link": "//' -e 's/",$//' | xargs lynx --dump --nonumbers --nolist --display_charset=utf-8 --stderr || true
+      RESPONSE="$(lynx --dump --nonumbers --nolist --display_charset=utf-8 --stderr "https://www.nytimes.com/search?query=$PARAMETER_TOPIC")"
+      echo "$RESPONSE" | sed 's/PRINT EDITION//g'
 
-- name: get_volume
-  description: Get the current music volume.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters.
-    required: ["rationale"]
-  # Using yq instead of jq here since official jq image doesn't ship curl/wget
-  image: mikefarah/yq:4
-  command: /bin/sh
-  args:
-  - -euc
-  - |
-    REQUEST='{"jsonrpc": "2.0", "id": 1, "method": "core.mixer.get_volume"}'
-    wget --no-check-certificate -qO /tmp/response \
-      --header='Content-Type: application/json' \
-      --post-data="$REQUEST" \
-      https://kubemate-a33a/mopidy/rpc &&
-    yq eval -e '.result' < /tmp/response 2>/dev/null || \
-      (printf 'Failed to get volume: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
-
-- name: set_volume
-  description: Set the music volume.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters.
-      volume:
-        type: integer
-        format: int32
-        minValue: 0
-        maxValue: 100
-        description: The volume to set. The volume is a percental value between 0 and 100.
-    required: ["rationale", "volume"]
-  # Using yq instead of jq here since official jq image doesn't ship curl/wget
-  image: mikefarah/yq:4
-  command: /bin/sh
-  args:
-  - -euc
-  - |
-    REQUEST="$(yq eval -ne --output-format=json '{"jsonrpc": "2.0", "id": 1,
-      "method": "core.mixer.set_volume",
-      "params": {"volume": env(PARAMETER_VOLUME)}
-    }')"
-    wget --no-check-certificate -qO /tmp/response \
-      --header='Content-Type: application/json' \
-      --post-data="$REQUEST" \
-      https://kubemate-a33a/mopidy/rpc 2>&1 &&
-    yq eval -e '.result' </tmp/response 2>/dev/null >&2 || \
-      (printf 'Failed to set volume: '; yq eval -e '.error.data.message' < /tmp/response 2>/dev/null >&2 || cat /tmp/response; false)
-    echo "The volume is set to $PARAMETER_VOLUME%."
-
-- name: next_song
-  description: Make the music player play the next song, skipping the one that is currently being played.
-  parameters:
-    type: object
-    properties:
-      rationale:
-        type: string
-        description: The rationale for choosing this function call with these parameters.
-    required: ["rationale"]
-  # Using yq instead of jq here since official jq image doesn't ship curl/wget
-  image: mikefarah/yq:4
-  command: /bin/sh
-  args:
-  - -euc
-  - |
-    REQUEST='{"jsonrpc": "2.0", "id": 1, "method": "core.playback.next"}'
-    wget --no-check-certificate -qO /tmp/response \
-      --header='Content-Type: application/json' \
-      --post-data="$REQUEST" \
-      https://kubemate-a33a/mopidy/rpc &&
-    yq eval -e '.result == null' < /tmp/response 2>/dev/null >/dev/null || \
-      (printf 'Failed to skip the song: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
-    echo Skipped the current song and started playing the next one.
+- name: playback
+  description: Control the music player.
+  prompt:
+  - *basePrompt
+  - *forceToolUse
+  tools:
+  - name: get_volume
+    description: Get the current music volume.
+    parameters:
+      type: object
+      properties:
+        rationale:
+          type: string
+          description: The rationale for choosing this function call with these parameters.
+      required: ["rationale"]
+    # Using yq instead of jq here since official jq image doesn't ship curl/wget
+    image: mikefarah/yq:4
+    command: /bin/sh
+    args:
+    - -euc
+    - |
+      REQUEST='{"jsonrpc": "2.0", "id": 1, "method": "core.mixer.get_volume"}'
+      wget --no-check-certificate -qO /tmp/response \
+        --header='Content-Type: application/json' \
+        --post-data="$REQUEST" \
+        https://kubemate-a33a/mopidy/rpc &&
+      yq eval -e '.result' < /tmp/response 2>/dev/null || \
+        (printf 'Failed to get volume: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
+  - name: set_volume
+    description: Set the music volume.
+    parameters:
+      type: object
+      properties:
+        rationale:
+          type: string
+          description: The rationale for choosing this function call with these parameters.
+        volume:
+          type: integer
+          format: int32
+          minValue: 0
+          maxValue: 100
+          description: The volume to set. The volume is a percental value between 0 and 100.
+      required: ["rationale", "volume"]
+    # Using yq instead of jq here since official jq image doesn't ship curl/wget
+    image: mikefarah/yq:4
+    command: /bin/sh
+    args:
+    - -euc
+    - |
+      REQUEST="$(yq eval -ne --output-format=json '{"jsonrpc": "2.0", "id": 1,
+        "method": "core.mixer.set_volume",
+        "params": {"volume": env(PARAMETER_VOLUME)}
+      }')"
+      wget --no-check-certificate -qO /tmp/response \
+        --header='Content-Type: application/json' \
+        --post-data="$REQUEST" \
+        https://kubemate-a33a/mopidy/rpc 2>&1 &&
+      yq eval -e '.result' </tmp/response 2>/dev/null >&2 || \
+        (printf 'Failed to set volume: '; yq eval -e '.error.data.message' < /tmp/response 2>/dev/null >&2 || cat /tmp/response; false)
+      echo "The volume is set to $PARAMETER_VOLUME%."
+  - name: next_song
+    description: Make the music player play the next song, skipping the one that is currently being played.
+    parameters:
+      type: object
+      properties:
+        rationale:
+          type: string
+          description: The rationale for choosing this function call with these parameters.
+      required: ["rationale"]
+    # Using yq instead of jq here since official jq image doesn't ship curl/wget
+    image: mikefarah/yq:4
+    command: /bin/sh
+    args:
+    - -euc
+    - |
+      REQUEST='{"jsonrpc": "2.0", "id": 1, "method": "core.playback.next"}'
+      wget --no-check-certificate -qO /tmp/response \
+        --header='Content-Type: application/json' \
+        --post-data="$REQUEST" \
+        https://kubemate-a33a/mopidy/rpc &&
+      yq eval -e '.result == null' < /tmp/response 2>/dev/null >/dev/null || \
+        (printf 'Failed to skip the song: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
+      echo Skipped the current song and started playing the next one.
 
 #- name: start_music_playback
 #  description: Call this method to make the music player play music.
@@ -200,3 +205,20 @@ functions:
 #    yq eval -e '.result == null' < /tmp/response 2>/dev/null >/dev/null || \
 #      (printf 'Failed to start music playback: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
 #    echo Music playback started.
+
+#tools:
+#- name: delegate
+#  description: Let an AI with access to the web, news and music player controls answer the user request.
+#  parameters:
+#    type: object
+#    properties:
+#      prompt:
+#        type: string
+#        description: The prompt providing the user request along with the relevant context.
+#    required: ["prompt"]
+#  image: alpine:3.22
+#  command: /bin/sh
+#  args:
+#  - -euc
+#  - |
+#    echo 'Donald Trump has become emperor of the world!'

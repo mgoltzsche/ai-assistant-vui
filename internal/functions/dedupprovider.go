@@ -10,14 +10,14 @@ type FunctionCallChecker interface {
 }
 
 type CallLoopPreventingProvider struct {
-	delegate    FunctionProvider
+	functions   []Function
 	bannedNames map[string]struct{}
 	calls       map[string]struct{}
 }
 
-func NewCallLoopPreventingProvider(p FunctionProvider) *CallLoopPreventingProvider {
+func NewCallLoopPreventingProvider(fns []Function) *CallLoopPreventingProvider {
 	return &CallLoopPreventingProvider{
-		delegate:    p,
+		functions:   fns,
 		bannedNames: map[string]struct{}{},
 		calls:       map[string]struct{}{},
 	}
@@ -39,11 +39,7 @@ func (p *CallLoopPreventingProvider) IsFunctionCallAllowed(name string, args map
 }
 
 func (p *CallLoopPreventingProvider) Functions() ([]Function, error) {
-	fns, err := p.delegate.Functions()
-	if err != nil {
-		return nil, err
-	}
-
+	fns := p.functions
 	filtered := make([]Function, 0, len(fns))
 
 	for _, f := range fns {

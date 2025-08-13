@@ -47,10 +47,10 @@ func formatMessageParts(parts []llms.ContentPart) string {
 	return strings.Join(strs, "")
 }
 
-func NewConversation(systemPrompt string) *Conversation {
+func NewConversation(systemPrompt string, reqNum int64) *Conversation {
 	messages := make([]conversationMessage, 1, 100)
 	messages[0] = conversationMessage{
-		RequestNum:     1,
+		RequestNum:     reqNum,
 		MessageContent: llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
@@ -26,23 +27,9 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		cancel()
 	}()
 
-	systemPrompt := fmt.Sprintf(`You are a helpful assistant.
-		Your name is %[1]s.
-		Keep your responses short and concise.
-		You are interacting with the user via STT and TTS technology, meaning the user cannot see but hear your text output.
-		When the user tells you to be quiet, you should answer with "Okay".
-		However, next time the user says something, you should engage in the conversation again.
-		`, cfg.WakeWord)
-	//You must speak to the user using the 'say' function. Before and after calling any other function, call the 'say' function to tell the user what you're doing!
-	//In case the user asks you to use an external tool, confirm the action by saying e.g. 'Okay.'.
-	//In case the user asks you to use an external tool, provide a short confirming response such as 'Okay.' followed by '%[2]s' on a new line followed by a prompt for another AI with tool access to finish the response.
-	//You can access external tools as well as the internet by returning a prompt after an intermediate response as quick user feedback, separated by '%[2]s' on a new line.
-	//To use an external tool or access the internet, end your response with a new line followed by '%[2]s' followed by the prompt that will fed into another AI with tool access to answer the user request on your behalf.
-	//systemPrompt := "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!"
-	conversation := model.NewConversation(systemPrompt)
-	tools := &docker.Functions{
-		FunctionDefinitions: cfg.Functions,
-	}
+	systemPrompt := renderPromptTemplate(strings.Join(cfg.Prompt, "\n"), cfg.WakeWord)
+	conversation := model.NewConversation(systemPrompt, 1)
+	tools := &docker.Functions{FunctionDefinitions: cfg.Functions}
 	wakewordFilter := &wakeword.Filter{
 		WakeWord: cfg.WakeWord,
 	}
@@ -55,7 +42,7 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		},
 	}
 	requester := &chat.Requester{}
-	chatCompleter := chat.Completer{
+	llm := chat.LLM{
 		ServerURL:           cfg.ServerURL,
 		APIKey:              cfg.APIKey,
 		Model:               cfg.ChatModel,
@@ -65,8 +52,23 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
 		MaxTurns:            5,
 		HTTPClient:          httpClient,
-		Functions:           tools,
-		IntroPrompt:         fmt.Sprintf("Initially, start the conversation by asking the user how you can help them and explaining that she must say '%s' in order to address you.", cfg.WakeWord),
+	}
+	agents := make([]chat.Agent, len(cfg.Agents))
+	for i, a := range cfg.Agents {
+		agents[i] = chat.Agent{
+			Name:         a.Name,
+			Description:  a.Description,
+			Tools:        &docker.Functions{FunctionDefinitions: a.Functions},
+			SystemPrompt: renderPromptTemplate(strings.Join(a.Prompt, "\n"), cfg.WakeWord),
+			LLM:          llm,
+		}
+	}
+
+	chatCompleter := &chat.Completer{
+		LLM:         llm,
+		Tools:       tools,
+		IntroPrompt: renderPromptTemplate(cfg.IntroPrompt, cfg.WakeWord),
+		Agents:      agents,
 	}
 	/*conversationAgent := &chat.ConversationAgent{
 		Completer: chatCompleter,
