@@ -45,12 +45,12 @@ func (o *Output) PlayAudio(ctx context.Context, input <-chan PlayRequest, conv *
 
 			if req.UserOnly || conv.AddAIResponse(req.RequestNum, req.Text) {
 				if req.UserOnly {
-					slog.Info("assistant:", req.Text)
+					slog.Info(fmt.Sprintf("assistant: %s", req.Text))
 				}
 
 				err := playAudio(ctx, bytes.NewReader(req.WaveData), device)
 				if err != nil {
-					slog.Error(fmt.Sprintf("play audio: %s", err))
+					slog.Error("failed to play audio", "err", err)
 				}
 			}
 		}
@@ -138,7 +138,7 @@ func playAudio(ctx context.Context, wavFile io.ReadSeeker, device *portaudio.Dev
 			// This happens occasionally for some reason.
 			// It doesn't impact the audio playback significantly as long as we're not failing here.
 			// TODO: get to the bottom of this and fix it!
-			slog.Warn(fmt.Sprintf("play audio: write chunk: %s", err))
+			slog.Warn("failed to write chunk to playback stream", "err", err)
 		}
 
 		select {

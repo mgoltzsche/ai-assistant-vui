@@ -58,10 +58,10 @@ func (o *Input) RecordAudio(ctx context.Context) (<-chan audio.Buffer, error) {
 			select {
 			case <-ctx.Done():
 				if err := audioStream.Stop(); err != nil {
-					slog.Warn(fmt.Sprintf("stopping input audio stream: %s", err))
+					slog.Warn("failed to stop input audio stream", "err", err)
 				}
 				if err := audioStream.Close(); err != nil {
-					slog.Warn("closing input audio stream: %s", err))
+					slog.Warn("failed to close input audio stream", "err", err)
 				}
 				return
 			default:
@@ -69,7 +69,7 @@ func (o *Input) RecordAudio(ctx context.Context) (<-chan audio.Buffer, error) {
 					if err == portaudio.InputOverflowed {
 						slog.Warn("audio input overflowed - dropped samples")
 					} else {
-						slog.Warn("reading audio from stream:", err)
+						slog.Warn("failed to read audio stream", "err", err)
 					}
 					continue
 				}
