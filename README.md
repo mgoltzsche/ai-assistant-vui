@@ -112,8 +112,8 @@ Schematic sequence diagram:
 
 ### Multi-agent architecture
 
-Supervision/hierarchy pattern:
-TODO: diagram
+Router workflow:
+
 ```mermaid
 ---
 config:
@@ -122,14 +122,14 @@ config:
 ---
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	supervisor(supervisor)
+	router(router)
 	music_agent(music_agent)
 	research_agent(research_agent)
 	__end__([<p>__end__</p>]):::last
-	__start__ --> supervisor;
-	supervisor --> music_agent;
-	supervisor --> research_agent;
-	supervisor --> __end__;
+	__start__ --> router;
+	router --> music_agent;
+	router --> research_agent;
+	router --> __end__;
 	music_agent --> __end__;
 	research_agent --> __end__;
 	classDef default fill:#f2f0ff,line-height:1.2
@@ -143,7 +143,7 @@ Benefits:
 * Prevents unrequested additional actions (e.g. changing the music volume when reciting wikipedia) by design.
 
 Disadvantages:
-* Higher total latency in case of complex function calls since two LLM calls.
+* Higher total latency in case of complex function calls since it requires at least three LLM requests (router + agent tool call + agent reading tool result) instead of just two.
 
 ## Limitations
 
