@@ -1,4 +1,4 @@
-ARG ONNXRUNTIME_VERSION=1.23.1
+ARG ONNXRUNTIME_VERSION=1.23.2
 
 # Alpine build doesn't work since execinfo.h is not available on alpine/musl libc and due to some other issue
 # Though, in the future there might be an alpine package since one is already being built in the edge version.
