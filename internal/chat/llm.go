@@ -60,6 +60,16 @@ func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []functions.F
 		c.llm = llm
 	}
 
+	if len(fn) > 0 {
+		// Add an answer function when there are functions defined.
+		// This is because the LLM tries to call it anyway and returns an error if the function doesn't exist.
+		// It happens since using LocalAI 4 and qwen3.
+		fn = append(fn, &answerFunction{
+			RequestNum: reqNum,
+			Ch:         ch,
+		})
+	}
+
 	// TODO: align [SAY]
 	fns := functions.NewCallLoopPreventingProvider(fn)
 	// TODO: add function to let the LLM say something to the user while using tools?
@@ -128,9 +138,18 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *funct
 		return nil
 	}
 	if len(llmFunctions) > 0 {
+		functionCalled := false
+
 		streamingFunc = func(_ context.Context, chunk []byte) error {
 			if chunkStr := string(chunk); !strings.HasPrefix(chunkStr, "[{") {
-				c.emitResponseChunk(chunkStr, reqNum, ch)
+				if functionCalled {
+					// Some inference providers return an error as regular chunk afterwards,
+					// e.g. "Internal error: no action received from LLM, without a message, computing a reply"
+					// or the answer in addition to an 'answer' function call.
+					slog.Warn("ignoring unexpected chunk after function call", "chunk", chunk)
+				} else {
+					c.emitResponseChunk(chunkStr, reqNum, ch)
+				}
 
 				return nil
 			}
@@ -144,6 +163,8 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *funct
 
 				return nil
 			}
+
+			functionCalled = true
 
 			toolCalls = append(toolCalls, addToolCalls...)
 
