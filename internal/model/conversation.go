@@ -56,7 +56,7 @@ func NewConversation(systemPrompt string, reqNum int64) *Conversation {
 
 	return &Conversation{
 		messages:       messages,
-		requestCounter: 1,
+		requestCounter: reqNum,
 	}
 }
 
@@ -69,6 +69,20 @@ func (c *Conversation) AddCancelFunc(fn context.CancelFunc) {
 
 func (c *Conversation) RequestCounter() int64 {
 	return c.requestCounter
+}
+
+func (c *Conversation) SystemPrompt() string {
+	return formatMessageParts(c.messages[0].MessageContent.Parts)
+}
+
+func (c *Conversation) SetSystemPrompt(prompt string) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	c.messages[0] = conversationMessage{
+		RequestNum:     c.requestCounter,
+		MessageContent: llms.TextParts(llms.ChatMessageTypeSystem, prompt),
+	}
 }
 
 func (c *Conversation) AddUserRequest(msgContent llms.ContentPart) int64 {

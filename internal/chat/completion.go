@@ -8,6 +8,7 @@ import (
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	"github.com/tmc/langchaingo/llms"
 )
 
 type ChatCompletionRequest struct {
@@ -35,10 +36,13 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 
 			go func() {
 				defer wg.Done()
-				prompt := fmt.Sprintf("%s\n%s", conv.Messages()[0].Parts[0], c.IntroPrompt)
-				welcomeConv := model.NewConversation(prompt, 1)
 
-				err := c.LLM.ChatCompletion(ctx, conv.RequestCounter(), nil, welcomeConv, ch)
+				origPrompt := conv.SystemPrompt()
+
+				conv.SetSystemPrompt(fmt.Sprintf("%s\n%s", origPrompt, c.IntroPrompt))
+				conv.AddUserRequest(llms.TextPart("Hi")) // LocalAI 4 requires user message
+
+				err := c.LLM.ChatCompletion(ctx, conv.RequestCounter(), nil, conv, ch)
 				if err != nil {
 					slog.Error("failed to generate greeting", "err", err)
 				}
@@ -47,6 +51,8 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 					Type:       model.MessageTypeEnd,
 					RequestNum: conv.RequestCounter(),
 				}
+
+				conv.SetSystemPrompt(origPrompt)
 			}()
 		}
 
