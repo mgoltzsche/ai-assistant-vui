@@ -175,6 +175,9 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *funct
 		llms.WithTemperature(c.Temperature),
 		llms.WithFrequencyPenalty(c.FrequencyPenalty),
 		llms.WithMaxTokens(c.MaxTokens),
+		llms.WithPromptCaching(true),
+		llms.WithThinkingMode(llms.ThinkingModeNone),
+		llms.WithMetadata(map[string]any{}),
 	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
