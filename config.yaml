@@ -27,15 +27,8 @@ prompt:
 #To use an external tool or access the internet, end your response with a new line followed by '%[2]s' followed by the prompt that will fed into another AI with tool access to answer the user request on your behalf.
 #systemPrompt := "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!"
 
-agents:
-- name: research
-  #description: Delegate the request to an AI with access to the web and latest news.
-  #description: Research information on the web in real-time.
-  description: Let an AI search the web or obtain the latest news.
-  prompt:
-  - *basePrompt
-  - &forceToolUse You MUST call a function to answer the user request!
-  tools:
+tools:
+  # research tools
   - name: websearch
     description: Search the web for a given query.
     parameters:
@@ -97,12 +90,7 @@ agents:
       RESPONSE="$(lynx --dump --nonumbers --nolist --display_charset=utf-8 --stderr "https://www.nytimes.com/search?query=$PARAMETER_TOPIC")"
       echo "$RESPONSE" | sed 's/PRINT EDITION//g'
 
-- name: playback
-  description: Control the music player.
-  prompt:
-  - *basePrompt
-  - *forceToolUse
-  tools:
+  # playback tools
   - name: get_volume
     description: Get the current music volume.
     parameters:

@@ -110,41 +110,6 @@ The application is written in Go, leveraging its static typing and concurrency f
 Schematic sequence diagram:
 ![Sequence diagram](https://raw.githubusercontent.com/mgoltzsche/ai-assistant-vui/main/docs/sequence-diagram.png)
 
-### Multi-agent architecture
-
-Router workflow:
-
-```mermaid
----
-config:
-  flowchart:
-    curve: linear
----
-graph TD;
-	__start__([<p>__start__</p>]):::first
-	router(router)
-	music_agent(music_agent)
-	research_agent(research_agent)
-	__end__([<p>__end__</p>]):::last
-	__start__ --> router;
-	router --> music_agent;
-	router --> research_agent;
-	router --> __end__;
-	music_agent --> __end__;
-	research_agent --> __end__;
-	classDef default fill:#f2f0ff,line-height:1.2
-	classDef first fill-opacity:0
-	classDef last fill:#bfb6fc
-```
-
-Benefits:
-* Lower token consumption due to fewer tool definitions per agent.
-* Lower latency for first LLM request due to fewer token.
-* Prevents unrequested additional actions (e.g. changing the music volume when reciting wikipedia) by design.
-
-Disadvantages:
-* Higher total latency in case of complex function calls since it requires at least three LLM requests (router + agent tool call + agent reading tool result) instead of just two.
-
 ## Limitations
 
 * The wake word must be recognized by the whisper model - this could be improved potentially using a specialized wake word model.
