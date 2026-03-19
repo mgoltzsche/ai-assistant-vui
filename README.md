@@ -49,8 +49,8 @@ Given the latest advancements of AI technology, I was curious whether a VUI coul
 ## System requirements
 
 * Processor: Intel Core i3/AMD Ryzen 3 or better.
-* RAM: 8GB minimum.
-* Graphics card with 8GB VRAM (AMD or Nvidia).
+* RAM: 4GB minimum.
+* Graphics card with 4GB VRAM (AMD or Nvidia).
 * Storage: 10GB free space.
 * Audio: Working microphone and speakers/headphones.
 * Operating system: Linux (tested on an Ubuntu 24.04 host), adaptable for MacOS and Windows.
