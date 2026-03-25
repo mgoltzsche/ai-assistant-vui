@@ -1,6 +1,7 @@
-package functions
+package tools
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 )
@@ -10,20 +11,20 @@ type FunctionCallChecker interface {
 }
 
 type CallLoopPreventingProvider struct {
-	functions   []Function
+	tools       []Tool
 	bannedNames map[string]struct{}
 	calls       map[string]struct{}
 }
 
-func NewCallLoopPreventingProvider(fns []Function) *CallLoopPreventingProvider {
+func NewCallLoopPreventingProvider(fns []Tool) *CallLoopPreventingProvider {
 	return &CallLoopPreventingProvider{
-		functions:   fns,
+		tools:       fns,
 		bannedNames: map[string]struct{}{},
 		calls:       map[string]struct{}{},
 	}
 }
 
-func (p *CallLoopPreventingProvider) IsFunctionCallAllowed(name string, args map[string]any) (bool, error) {
+func (p *CallLoopPreventingProvider) IsToolCallAllowed(name string, args map[string]any) (bool, error) {
 	callSignature := name
 
 	if _, alreadyCalled := p.calls[callSignature]; alreadyCalled {
@@ -38,11 +39,11 @@ func (p *CallLoopPreventingProvider) IsFunctionCallAllowed(name string, args map
 	return true, nil
 }
 
-func (p *CallLoopPreventingProvider) Functions() ([]Function, error) {
-	fns := p.functions
-	filtered := make([]Function, 0, len(fns))
+func (p *CallLoopPreventingProvider) Tools(_ context.Context) ([]Tool, error) {
+	tools := p.tools
+	filtered := make([]Tool, 0, len(tools))
 
-	for _, f := range fns {
+	for _, f := range tools {
 		if _, ok := p.bannedNames[f.Definition().Name]; !ok {
 			filtered = append(filtered, f)
 		}

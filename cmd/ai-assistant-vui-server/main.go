@@ -14,6 +14,7 @@ import (
 	"github.com/mgoltzsche/ai-assistant-vui/internal/cli"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/server"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tlsutils"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools/mcp"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
 )
 
@@ -60,15 +61,19 @@ func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir
 		Handler:     mux,
 	}
 
-	server.AddRoutes(ctx, cfg, webDir, mux)
+	mcpServers, err := mcp.NewServers(ctx, cfg.MCPServers)
+	if err != nil {
+		return err
+	}
+
+	server.AddRoutes(ctx, cfg, mcpServers, webDir, mux)
 
 	go func() {
 		<-ctx.Done()
 		slog.Info("terminating")
-		srv.Shutdown(ctx)
+		_ = mcpServers.Close()
+		_ = srv.Shutdown(ctx)
 	}()
-
-	var err error
 
 	if tlsEnabled {
 		//srv.TLSConfig = &tls.Config{}

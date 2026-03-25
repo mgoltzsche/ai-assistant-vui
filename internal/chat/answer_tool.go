@@ -9,12 +9,12 @@ import (
 	"github.com/tmc/langchaingo/llms"
 )
 
-type answerFunction struct {
+type answerTool struct {
 	RequestNum int64
 	Ch         chan<- ResponseChunk
 }
 
-func (f *answerFunction) Definition() llms.FunctionDefinition {
+func (f *answerTool) Definition() llms.FunctionDefinition {
 	return llms.FunctionDefinition{
 		Name:        "answer",
 		Description: "Call this function to answer the user request finally, once you have all information.",
@@ -32,7 +32,7 @@ func (f *answerFunction) Definition() llms.FunctionDefinition {
 	}
 }
 
-func (f *answerFunction) Call(ctx context.Context, params map[string]any) (string, error) {
+func (f *answerTool) Call(ctx context.Context, params map[string]any) (string, error) {
 	msg, ok := params["message"].(string)
 	if !ok || msg == "" {
 		return "", errors.New("no message provided")

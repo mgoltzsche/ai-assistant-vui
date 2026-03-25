@@ -8,11 +8,10 @@ import (
 	"time"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
-	//"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/functions/docker"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/soundgen"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools/mcp"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tts"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/wakeword"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
@@ -20,7 +19,7 @@ import (
 
 type AudioMessage = model.AudioMessage
 
-func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan AudioMessage) (<-chan AudioMessage, *model.Conversation, error) {
+func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp.Servers, input <-chan AudioMessage) (<-chan AudioMessage, *model.Conversation, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		<-ctx.Done()
@@ -29,7 +28,11 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 
 	systemPrompt := renderPromptTemplate(strings.Join(cfg.Prompt, "\n"), cfg.WakeWord)
 	conversation := model.NewConversation(systemPrompt, 1)
-	tools := &docker.Functions{FunctionDefinitions: cfg.Functions}
+	tools, err := mcp.ToolProvider(mcpServers, cfg.Tools)
+	if err != nil {
+		return nil, nil, fmt.Errorf("init main tools: %w", err)
+	}
+
 	wakewordFilter := &wakeword.Filter{
 		WakeWord: cfg.WakeWord,
 	}
@@ -55,10 +58,15 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, input <-chan A
 	}
 	agents := make([]chat.Agent, len(cfg.Agents))
 	for i, a := range cfg.Agents {
+		agentTools, err := mcp.ToolProvider(mcpServers, a.Tools)
+		if err != nil {
+			return nil, nil, fmt.Errorf("init %s agent tools: %w", a.Name, err)
+		}
+
 		agents[i] = chat.Agent{
 			Name:         a.Name,
 			Description:  a.Description,
-			Tools:        &docker.Functions{FunctionDefinitions: a.Functions},
+			Tools:        agentTools,
 			SystemPrompt: renderPromptTemplate(strings.Join(a.Prompt, "\n"), cfg.WakeWord),
 			LLM:          llm,
 		}

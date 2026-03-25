@@ -17,12 +17,13 @@ import (
 	"github.com/go-audio/wav"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/channel"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools/mcp"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
 	"github.com/orcaman/writerseeker"
 )
 
-func AddRoutes(ctx context.Context, cfg config.Configuration, webDir string, mux *http.ServeMux) {
-	channels := channel.NewChannels(ctx, cfg)
+func AddRoutes(ctx context.Context, cfg config.Configuration, mcpServers mcp.Servers, webDir string, mux *http.ServeMux) {
+	channels := channel.NewChannels(ctx, cfg, mcpServers)
 
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 

@@ -7,21 +7,27 @@ import (
 )
 
 type Configuration struct {
-	ServerURL    string            `json:"serverURL"`
-	APIKey       string            `json:"apiKey"`
-	InputDevice  string            `json:"inputDevice,omitempty"`
-	OutputDevice string            `json:"outputDevice,omitempty"`
-	MinVolume    int               `json:"minVolume,omitempty"`
-	VADEnabled   bool              `json:"vadEnabled,omitempty"`
-	VADModelPath string            `json:"vadModelPath,omitempty"`
-	STTModel     string            `json:"sttModel,omitempty"`
-	TTSModel     string            `json:"ttsModel,omitempty"`
-	ChatModel    string            `json:"chatModel,omitempty"`
-	Temperature  float64           `json:"temperature,omitempty"`
-	WakeWord     string            `json:"wakeWord,omitempty"`
-	IntroPrompt  string            `json:"introPrompt,omitempty"`
-	Agents       []AgentDefinition `json:"agents,omitempty"`
+	ServerURL    string               `json:"serverURL"`
+	APIKey       string               `json:"apiKey"`
+	InputDevice  string               `json:"inputDevice,omitempty"`
+	OutputDevice string               `json:"outputDevice,omitempty"`
+	MinVolume    int                  `json:"minVolume,omitempty"`
+	VADEnabled   bool                 `json:"vadEnabled,omitempty"`
+	VADModelPath string               `json:"vadModelPath,omitempty"`
+	STTModel     string               `json:"sttModel,omitempty"`
+	TTSModel     string               `json:"ttsModel,omitempty"`
+	ChatModel    string               `json:"chatModel,omitempty"`
+	Temperature  float64              `json:"temperature,omitempty"`
+	WakeWord     string               `json:"wakeWord,omitempty"`
+	IntroPrompt  string               `json:"introPrompt,omitempty"`
+	MCPServers   map[string]MCPServer `json:"mcpServers,omitempty"`
+	Agents       []AgentDefinition    `json:"agents,omitempty"`
 	AgentDefinition
+}
+
+type MCPServer struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
 }
 
 type FunctionDefinition struct {
@@ -38,8 +44,13 @@ type Container struct {
 }
 
 type AgentDefinition struct {
-	Name        string               `json:"name,omitempty"`
-	Description string               `json:"description,omitempty"`
-	Prompt      []string             `json:"prompt,omitempty"`
-	Functions   []FunctionDefinition `json:"tools,omitempty"`
+	Name        string              `json:"name,omitempty"`
+	Description string              `json:"description,omitempty"`
+	Prompt      []string            `json:"prompt,omitempty"`
+	Tools       []MCPToolsReference `json:"tools,omitempty"`
+}
+
+type MCPToolsReference struct {
+	MCPServer  string   `json:"mcpServer"`
+	AllowTools []string `json:"allow"`
 }

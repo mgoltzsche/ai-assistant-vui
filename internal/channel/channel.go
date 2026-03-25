@@ -11,6 +11,7 @@ import (
 	"github.com/go-audio/wav"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/pubsub"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools/mcp"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vui"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
 )
@@ -25,7 +26,7 @@ type Channel struct {
 	cancel context.CancelFunc
 }
 
-func newChannel(ctx context.Context, cfg config.Configuration, client *http.Client) (*Channel, error) {
+func newChannel(ctx context.Context, cfg config.Configuration, mcpServers mcp.Servers, client *http.Client) (*Channel, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	input := make(chan AudioMessage, 5)
 	c := &Channel{
@@ -34,7 +35,7 @@ func newChannel(ctx context.Context, cfg config.Configuration, client *http.Clie
 		cancel: cancel,
 	}
 
-	output, conversation, err := vui.AudioPipeline(ctx, cfg, input)
+	output, conversation, err := vui.AudioPipeline(ctx, cfg, mcpServers, input)
 	if err != nil {
 		return nil, fmt.Errorf("start conversation: %w", err)
 	}

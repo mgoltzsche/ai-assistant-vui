@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools"
 	"github.com/tmc/langchaingo/jsonschema"
 	"github.com/tmc/langchaingo/llms"
 )
@@ -15,7 +15,7 @@ type Agent struct {
 	Name         string
 	Description  string
 	SystemPrompt string
-	Tools        functions.FunctionProvider
+	Tools        tools.ToolProvider
 	LLM          LLM
 }
 
@@ -46,7 +46,7 @@ func (a *Agent) AsTool(reqNum int64, ch chan<- ResponseChunk) *AgentTool {
 }
 
 func (a *Agent) invoke(ctx context.Context, prompt string, reqNum int64, ch chan<- ResponseChunk) error {
-	tools, err := a.Tools.Functions()
+	tools, err := a.Tools.Tools(ctx)
 	if err != nil {
 		return err
 	}

@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools"
 	"github.com/tmc/langchaingo/llms"
 )
 
@@ -18,7 +18,7 @@ type ChatCompletionRequest struct {
 type Completer struct {
 	LLM         LLM
 	IntroPrompt string
-	Tools       functions.FunctionProvider
+	Tools       tools.ToolProvider
 	Agents      []Agent
 }
 
@@ -57,7 +57,7 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 		}
 
 		for req := range requests {
-			tools, err := c.Tools.Functions()
+			tools, err := c.Tools.Tools(ctx)
 			if err != nil {
 				slog.Error("failed to load tools", "err", err)
 

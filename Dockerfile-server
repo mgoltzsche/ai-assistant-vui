@@ -15,9 +15,15 @@ RUN npm install
 COPY ui /ui
 RUN npm run build
 
+FROM mgoltzsche/tool-containers-mcp:0.1.0 AS tool-containers
+
 FROM alpine:3.22
 ENV VUI_LOG_LEVEL=DEBUG
 COPY --from=server /build/ai-assistant-vui-server /
 COPY config.yaml /etc/ai-assistant-vui/config.yaml
 COPY --from=ui /ui/dist /var/lib/ai-assistant-vui/ui
+COPY --from=tool-containers /tool-containers-mcp /
+COPY tools.yaml /etc/tool-containers-mcp/
+# To test whether tools.yaml is valid (mcp client doesn't return errors)
+#RUN /tool-containers-mcp --config=/etc/tool-containers-mcp/tools.yaml
 ENTRYPOINT ["/ai-assistant-vui-server"]

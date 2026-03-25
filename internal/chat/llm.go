@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mgoltzsche/ai-assistant-vui/internal/functions"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 )
@@ -45,7 +45,7 @@ type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []functions.Function, conv *model.Conversation, ch chan<- ResponseChunk) error {
+func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []tools.Tool, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	if c.llm == nil {
 		llm, err := openai.New(
 			openai.WithHTTPClient(c.HTTPClient),
@@ -64,14 +64,14 @@ func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []functions.F
 		// Add an answer function when there are functions defined.
 		// This is because the LLM tries to call it anyway and returns an error if the function doesn't exist.
 		// It happens since using LocalAI 4 and qwen3.
-		fn = append(fn, &answerFunction{
+		fn = append(fn, &answerTool{
 			RequestNum: reqNum,
 			Ch:         ch,
 		})
 	}
 
 	// TODO: align [SAY]
-	fns := functions.NewCallLoopPreventingProvider(fn)
+	fns := tools.NewCallLoopPreventingProvider(fn)
 	// TODO: add function to let the LLM say something to the user while using tools?
 	// On the the one hand this might provide good UX when the LLM provides dynamic feedback (alternative to a reasoning argument).
 	// On the other hand the client could require the LLM to always respond with a function call - no special cases, no accidental reading of function call JSON aloud and function call JSON would always be parsed via StreamingFunc.
@@ -89,7 +89,7 @@ func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []functions.F
 		if c.MaxTurns > 0 && turn > c.MaxTurns {
 			slog.Warn(fmt.Sprintf("maximum LLM conversation turns of %d was exceeded for the request", c.MaxTurns))
 
-			fns = functions.NewCallLoopPreventingProvider(nil)
+			fns = tools.NewCallLoopPreventingProvider(nil)
 		}
 
 		err := c.createChatCompletion(ctx, reqNum, fns, conv, ch)
@@ -107,7 +107,7 @@ func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []functions.F
 	}
 }
 
-func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
+func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	if conv.RequestCounter() > reqNum {
 		return nil // skip outdated request (user requested something else)
 	}
@@ -117,7 +117,7 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *funct
 
 	conv.AddCancelFunc(cancel)
 
-	functions, err := fns.Functions()
+	functions, err := fns.Tools(ctx)
 	if err != nil {
 		return fmt.Errorf("get available tools: %w", err)
 	}
@@ -250,7 +250,7 @@ type reconcileError struct {
 	error
 }
 
-func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, fns *functions.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
+func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	call := toolCall.FunctionCall
 	args := map[string]any{}
 
@@ -261,7 +261,7 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 		}
 	}
 
-	callAllowed, err := fns.IsFunctionCallAllowed(call.Name, args)
+	callAllowed, err := fns.IsToolCallAllowed(call.Name, args)
 	if err != nil {
 		return fmt.Errorf("deduplicate tool call: %w", err)
 	}
@@ -298,8 +298,8 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 			return err
 		}
 
-		msg := fmt.Sprintf("ERROR: failed to call tool %q: %s", call.Name, err)
-		result = msg
+		msg := fmt.Sprintf("failed to call tool %q: %s", call.Name, err)
+		result = fmt.Sprintf("ERROR: %s", msg)
 
 		slog.Warn(msg)
 	}
@@ -309,15 +309,15 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 	return nil
 }
 
-func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns *functions.CallLoopPreventingProvider) (string, error) {
-	slog.Debug(fmt.Sprintf("ai tool call %s of function %s with args %#v", call.ID, call.FunctionCall.Name, call.FunctionCall.Arguments))
+func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns *tools.CallLoopPreventingProvider) (string, error) {
+	slog.Debug(fmt.Sprintf("%s tool call %s with args %#v", call.FunctionCall.Name, call.ID, call.FunctionCall.Arguments))
 
-	fnList, err := fns.Functions()
+	fnList, err := fns.Tools(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	fn, err := functions.FindByName(call.FunctionCall.Name, fnList)
+	fn, err := tools.FindByName(call.FunctionCall.Name, fnList)
 	if err != nil {
 		return "", err
 	}
@@ -343,7 +343,7 @@ func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns 
 		result = strings.ReplaceAll("\n"+functionCallResult, "\n", "\n\t")
 	}
 
-	slog.Debug(fmt.Sprintf("tool %s result: %s", call.FunctionCall.Name, result))
+	slog.Debug(fmt.Sprintf("%s tool result: %s", call.FunctionCall.Name, result))
 
 	return result, nil
 }
