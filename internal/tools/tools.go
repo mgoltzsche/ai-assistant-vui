@@ -13,7 +13,7 @@ type ToolProvider interface {
 
 type Tool interface {
 	Definition() llms.FunctionDefinition
-	Call(ctx context.Context, params map[string]any) (string, error)
+	Call(ctx context.Context, params string) (string, error)
 }
 
 func FindByName(name string, tools []Tool) (Tool, error) {

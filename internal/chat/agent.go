@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -89,8 +90,16 @@ func (a *AgentTool) Definition() llms.FunctionDefinition {
 	}
 }
 
-func (a *AgentTool) Call(ctx context.Context, params map[string]any) (string, error) {
-	prompt, ok := params["prompt"].(string)
+func (a *AgentTool) Call(ctx context.Context, arguments string) (string, error) {
+	args := map[string]any{}
+	if arguments != "" {
+		err := json.Unmarshal([]byte(arguments), &args)
+		if err != nil {
+			return "", fmt.Errorf("parse agent call arguments: %w", err)
+		}
+	}
+
+	prompt, ok := args["prompt"].(string)
 	if !ok || prompt == "" {
 		return "", fmt.Errorf("no prompt provided for agent %s", a.Name)
 	}

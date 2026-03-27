@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"github.com/tmc/langchaingo/llms"
 )
 
 type FunctionCallChecker interface {
@@ -24,12 +26,12 @@ func NewCallLoopPreventingProvider(fns []Tool) *CallLoopPreventingProvider {
 	}
 }
 
-func (p *CallLoopPreventingProvider) IsToolCallAllowed(name string, args map[string]any) (bool, error) {
-	callSignature := name
+func (p *CallLoopPreventingProvider) IsToolCallAllowed(call *llms.FunctionCall) (bool, error) {
+	callSignature := call.Name
 
 	if _, alreadyCalled := p.calls[callSignature]; alreadyCalled {
-		slog.Warn(fmt.Sprintf("disabling %s tool temporarily due to duplicate call", name))
-		p.bannedNames[name] = struct{}{}
+		slog.Warn(fmt.Sprintf("disabling %s tool temporarily due to duplicate call", callSignature))
+		p.bannedNames[call.Name] = struct{}{}
 
 		return false, nil
 	}

@@ -2,7 +2,9 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
 	"github.com/tmc/langchaingo/jsonschema"
@@ -32,8 +34,16 @@ func (f *answerTool) Definition() llms.FunctionDefinition {
 	}
 }
 
-func (f *answerTool) Call(ctx context.Context, params map[string]any) (string, error) {
-	msg, ok := params["message"].(string)
+func (f *answerTool) Call(ctx context.Context, arguments string) (string, error) {
+	args := map[string]any{}
+	if arguments != "" {
+		err := json.Unmarshal([]byte(arguments), &args)
+		if err != nil {
+			return "", fmt.Errorf("parse answer call arguments: %w", err)
+		}
+	}
+
+	msg, ok := args["message"].(string)
 	if !ok || msg == "" {
 		return "", errors.New("no message provided")
 	}

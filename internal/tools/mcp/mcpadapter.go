@@ -2,7 +2,10 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -46,11 +49,15 @@ func (t *MCPToolAdapter) Definition() llms.FunctionDefinition {
 	return t.definition
 }
 
-func (t *MCPToolAdapter) Call(ctx context.Context, params map[string]any) (string, error) {
+func (t *MCPToolAdapter) Call(ctx context.Context, args string) (string, error) {
+	argObj, err := t.convertArgs(args)
+	if err != nil {
+		return "", fmt.Errorf("invalid arguments: %w", err)
+	}
 	result, err := t.client.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      t.tool.Name,
-			Arguments: params,
+			Arguments: argObj,
 		},
 	})
 	if err != nil {
@@ -65,6 +72,37 @@ func (t *MCPToolAdapter) Call(ctx context.Context, params map[string]any) (strin
 	}
 
 	return msg, nil
+}
+
+func (t *MCPToolAdapter) convertArgs(args string) (any, error) {
+	argsSchema, err := argumentsSchema(t.definition.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	switch argsSchema.Type {
+	case "object":
+		var m map[string]any
+		err = json.Unmarshal([]byte(args), &m)
+		if err != nil {
+			return nil, err
+		}
+		return m, nil
+	case "string":
+		return args, nil
+	case "boolean":
+		return strconv.ParseBool(args)
+	case "number":
+		return strconv.ParseFloat(args, 64)
+	default:
+		return nil, errors.New("unsupported argument type")
+	}
+}
+
+func argumentsSchema(schema any) (mcp.ToolInputSchema, error) {
+	if s, ok := schema.(mcp.ToolInputSchema); ok {
+		return s, nil
+	}
+	return mcp.ToolInputSchema{}, fmt.Errorf("unexpected input schema of type %T", schema)
 }
 
 func textContentToString(content []mcp.Content) (string, error) {

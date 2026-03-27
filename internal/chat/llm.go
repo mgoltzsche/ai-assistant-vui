@@ -252,16 +252,8 @@ type reconcileError struct {
 
 func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	call := toolCall.FunctionCall
-	args := map[string]any{}
 
-	if call.Arguments != "" {
-		err := json.Unmarshal([]byte(call.Arguments), &args)
-		if err != nil {
-			return fmt.Errorf("parse tool call arguments: %w", err)
-		}
-	}
-
-	callAllowed, err := fns.IsToolCallAllowed(call.Name, args)
+	callAllowed, err := fns.IsToolCallAllowed(call)
 	if err != nil {
 		return fmt.Errorf("deduplicate tool call: %w", err)
 	}
@@ -271,17 +263,8 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 		return fmt.Errorf("repeating tool call %q is not allowed", call.Name)
 	}
 
-	if rationale, ok := args["rationale"]; ok && rationale != "" {
-		infos := splitIntoSentences(fmt.Sprintf("%v", rationale))
-
-		if len(infos) > 1 {
-			infos = infos[:1]
-		}
-
-		// TODO: let it explain its rationale again? [SAY]
-		//infos = append(infos, fmt.Sprintf("Let me use my %q tool.", call.Name))
-		infos = []string{fmt.Sprintf("Let me use my %q tool.", call.Name)}
-
+	if toolCall.FunctionCall.Name != "answer" {
+		infos := []string{fmt.Sprintf("Let me use my %q tool.", call.Name)}
 		for _, sentence := range infos {
 			ch <- ResponseChunk{
 				Type:       model.MessageTypeChunk,
@@ -292,7 +275,7 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 		}
 	}
 
-	result, err := callTool(ctx, toolCall, args, fns)
+	result, err := callTool(ctx, toolCall, fns)
 	if err != nil {
 		if IsResponseDelegated(err) {
 			return err
@@ -309,7 +292,7 @@ func handleToolCall(ctx context.Context, toolCall llms.ToolCall, reqNum int64, f
 	return nil
 }
 
-func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns *tools.CallLoopPreventingProvider) (string, error) {
+func callTool(ctx context.Context, call llms.ToolCall, fns *tools.CallLoopPreventingProvider) (string, error) {
 	slog.Debug(fmt.Sprintf("%s tool call %s with args %#v", call.FunctionCall.Name, call.ID, call.FunctionCall.Arguments))
 
 	fnList, err := fns.Tools(ctx)
@@ -322,12 +305,12 @@ func callTool(ctx context.Context, call llms.ToolCall, args map[string]any, fns 
 		return "", err
 	}
 
-	err = validateFunctionCallArgs(args, fn.Definition())
+	err = validateFunctionCallArgs(call.FunctionCall.Arguments, fn.Definition())
 	if err != nil {
 		return "", err
 	}
 
-	functionCallResult, err := fn.Call(ctx, args)
+	functionCallResult, err := fn.Call(ctx, call.FunctionCall.Arguments)
 	if err != nil {
 		return "", err
 	}
@@ -368,7 +351,7 @@ func printMessages(messages []llms.MessageContent) {
 	slog.Debug(fmt.Sprintf("requesting chat completion for message history: %s", strings.Join(msgs, "")))
 }
 
-func validateFunctionCallArgs(args map[string]any, paramDefinition llms.FunctionDefinition) error {
+func validateFunctionCallArgs(args string, paramDefinition llms.FunctionDefinition) error {
 	if len(args) == 0 {
 		return errors.New("function called with empty arguments")
 	}
