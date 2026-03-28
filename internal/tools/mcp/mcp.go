@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"os/exec"
 	"slices"
@@ -18,11 +19,13 @@ func NewServers(ctx context.Context, mcpServers map[string]config.MCPServer) (Se
 	providers := Servers(make(map[string]tools.ToolProvider, 1))
 
 	for _, k := range slices.Sorted(maps.Keys(mcpServers)) {
+		slog.Info(fmt.Sprintf("starting %s MCP server", k))
+
 		s := mcpServers[k]
 
 		mcpClient := mcp.NewClient(&mcp.Implementation{Name: "mcp-client", Version: "v1.0.0"}, nil)
 
-		// Connect to a server over stdin/stdout.
+		// Connect to MCP server over stdin/stdout.
 		transport := &mcp.CommandTransport{Command: exec.Command(s.Command, s.Args...)}
 		session, err := mcpClient.Connect(ctx, transport, nil)
 		if err != nil {

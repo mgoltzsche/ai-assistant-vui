@@ -63,7 +63,7 @@ func main() {
 	}
 }
 
-func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
+func runAudioPipeline(ctx context.Context, cfg config.Configuration) (err error) {
 	audioDevice := &audio.Input{
 		Device:      cfg.InputDevice,
 		SampleRate:  16000,
@@ -97,6 +97,12 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		if e := mcpServers.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
 
 	playbackRequests, conversation, err := vui.AudioPipeline(ctx, cfg, mcpServers, wavAudioInput)
 	if err != nil {

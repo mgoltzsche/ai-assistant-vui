@@ -44,12 +44,21 @@ RUN go build -o ai-assistant-vui ./cmd/ai-assistant-vui
 
 
 FROM mgoltzsche/tool-containers-mcp:0.3.1 AS tool-containers
+FROM mgoltzsche/podman:5.8.1-minimal AS podman
 
 
 FROM debian:12-slim
 RUN set -ex; \
 	apt-get update && apt-get upgrade -y; \
-	apt-get install -y libportaudiocpp0 curl
+	apt-get install -y libportaudiocpp0 curl; \
+	mkdir -p /data/memory
+
+# Add podman to be able to run MCP servers/tools as nested containers
+COPY --from=podman /usr/local/lib/podman /usr/local/lib/podman
+COPY --from=podman /usr/local/bin /usr/local/bin
+COPY --from=podman /etc/containers /etc/containers
+RUN ln -s podman /usr/local/bin/docker
+
 ARG ONNXRUNTIME_VERSION
 COPY --from=onnxruntime /onnxruntime/build/Linux/Release/libonnxruntime.so* /usr/local/lib/onnxruntime/
 COPY --from=onnxruntime /onnxruntime/include /usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include
@@ -62,7 +71,8 @@ RUN set -eux; \
 	curl -fsSL https://github.com/snakers4/silero-vad/raw/refs/tags/$SILERO_VAD_VERSION/src/silero_vad/data/silero_vad.onnx > /models/silero_vad.onnx
 COPY --from=tool-containers /tool-containers-mcp /
 COPY --from=vui /build/ai-assistant-vui /
+COPY with-docker.sh /
 COPY tools.yaml /etc/tool-containers-mcp/
 COPY config.yaml /etc/ai-assistant-vui/
 ENV VUI_LOG_LEVEL=DEBUG
-ENTRYPOINT ["/ai-assistant-vui"]
+ENTRYPOINT ["/with-docker.sh", "/ai-assistant-vui"]

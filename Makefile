@@ -25,10 +25,11 @@ run-localai: ## Run the LocalAI container.
 	docker run -ti --rm --network=host --privileged -v "`pwd`/data/models:/models" -v "`pwd`/data/backends:/backends" localai/localai:v4.0.0-gpu-vulkan
 
 run-vui: build-vui ## Run the command line VUI.
-	docker run --rm --privileged --network=host -v /var/run/docker.sock:/var/run/docker.sock $(CLI_IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
+	docker run --rm --privileged --network=host -v "`pwd`/data/memory:/data/memory" $(CLI_IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
 
 run-server: build-server ui/dist ## Run the VUI web API server.
-	docker run --rm --network=host -v /var/run/docker.sock:/var/run/docker.sock -v "`pwd`/ui/dist:/var/lib/ai-assistant-vui/ui" $(SERVER_IMAGE) --tls
+	$(eval DOCKEROPTS = $(if $(wildcard /var/run/docker.sock),-v /var/run/docker.sock:/var/run/docker.sock,--privileged))
+	docker run --rm --network=host $(DOCKEROPTS) -v "`pwd`/data/memory:/data/memory" -v "`pwd`/ui/dist:/var/lib/ai-assistant-vui/ui" $(SERVER_IMAGE) --tls
 
 ui/dist: build-server
 	rm -rf ui/dist && \

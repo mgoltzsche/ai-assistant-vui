@@ -8,6 +8,7 @@ COPY pkg /build/pkg
 ENV CGO_ENABLED=0
 RUN go build -o ai-assistant-vui-server -ldflags '-s -w -extldflags "-static"' ./cmd/ai-assistant-vui-server
 
+
 FROM node:24-alpine3.23 AS ui
 COPY ui/package.json ui/package-lock.json /ui/
 WORKDIR /ui
@@ -15,15 +16,28 @@ RUN npm install
 COPY ui /ui
 RUN npm run build
 
+
 FROM mgoltzsche/tool-containers-mcp:0.3.1 AS tool-containers
+FROM mgoltzsche/podman:5.8.1-minimal AS podman
+
 
 FROM alpine:3.23
 ENV VUI_LOG_LEVEL=DEBUG
+RUN set -ex; \
+	apk add --update --no-cache docker-cli; \
+	mkdir -p /data/memory
+
+# Add podman to be able to run MCP servers/tools as nested containers
+COPY --from=podman /usr/local/lib/podman /usr/local/lib/podman
+COPY --from=podman /usr/local/bin /usr/local/bin
+COPY --from=podman /etc/containers /etc/containers
+
 COPY --from=server /build/ai-assistant-vui-server /
-COPY config.yaml /etc/ai-assistant-vui/config.yaml
 COPY --from=ui /ui/dist /var/lib/ai-assistant-vui/ui
 COPY --from=tool-containers /tool-containers-mcp /
+COPY with-docker.sh /
 COPY tools.yaml /etc/tool-containers-mcp/
+COPY config.yaml /etc/ai-assistant-vui/config.yaml
 # To test whether tools.yaml is valid (mcp client doesn't return errors)
 #RUN /tool-containers-mcp --config=/etc/tool-containers-mcp/tools.yaml
-ENTRYPOINT ["/ai-assistant-vui-server"]
+ENTRYPOINT ["/with-docker.sh", "/ai-assistant-vui-server"]

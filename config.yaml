@@ -16,7 +16,7 @@ prompt:
 - &basePrompt |
   You are a helpful assistant.
   Your name is {wakeWord}.
-  You are interacting with the user via STT and TTS technology. Therefore don't output Markdown or emoticons.
+  You are interacting with the user via STT and TTS technology. Therefore don't respond with Markdown or emoticons.
 
 #You must speak to the user using the 'say' function. Before and after calling any other function, call the 'say' function to tell the user what you're doing!
 #In case the user asks you to use an external tool, confirm the action by saying e.g. 'Okay.'.
@@ -30,8 +30,18 @@ mcpServers:
     command: /tool-containers-mcp
     args:
       - --config=/etc/tool-containers-mcp/tools.yaml
+  memory:
+    command: docker
+    args:
+      - run
+      - -i
+      - --rm
+      - -v
+      - /data/memory:/local-directory
+      - mcp/memory
 
 tools:
 - mcpServer: tool-containers
   #allow:
   #- wikipedia
+- mcpServer: memory

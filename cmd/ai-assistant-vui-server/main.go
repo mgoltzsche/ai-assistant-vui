@@ -53,7 +53,7 @@ func main() {
 	}
 }
 
-func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir string, tlsEnabled bool, tlsCert, tlsKey string) error {
+func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir string, tlsEnabled bool, tlsCert, tlsKey string) (err error) {
 	mux := http.NewServeMux()
 	srv := &http.Server{
 		Addr:        listenAddr,
@@ -66,12 +66,17 @@ func runServer(ctx context.Context, cfg config.Configuration, listenAddr, webDir
 		return err
 	}
 
+	defer func() {
+		if e := mcpServers.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
+
 	server.AddRoutes(ctx, cfg, mcpServers, webDir, mux)
 
 	go func() {
 		<-ctx.Done()
 		slog.Info("terminating")
-		_ = mcpServers.Close()
 		_ = srv.Shutdown(ctx)
 	}()
 
