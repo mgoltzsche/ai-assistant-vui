@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine3.22 AS server
+FROM golang:1.26-alpine3.23 AS server
 COPY go.mod go.sum /build/
 WORKDIR /build
 RUN go mod download
@@ -8,7 +8,7 @@ COPY pkg /build/pkg
 ENV CGO_ENABLED=0
 RUN go build -o ai-assistant-vui-server -ldflags '-s -w -extldflags "-static"' ./cmd/ai-assistant-vui-server
 
-FROM node:24-alpine3.22 AS ui
+FROM node:24-alpine3.23 AS ui
 COPY ui/package.json ui/package-lock.json /ui/
 WORKDIR /ui
 RUN npm install
@@ -17,7 +17,7 @@ RUN npm run build
 
 FROM mgoltzsche/tool-containers-mcp:0.1.0 AS tool-containers
 
-FROM alpine:3.22
+FROM alpine:3.23
 ENV VUI_LOG_LEVEL=DEBUG
 COPY --from=server /build/ai-assistant-vui-server /
 COPY config.yaml /etc/ai-assistant-vui/config.yaml

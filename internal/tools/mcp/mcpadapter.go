@@ -3,18 +3,16 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tools"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/tmc/langchaingo/llms"
 )
 
-func NewMCPTool(tool mcp.Tool, client client.MCPClient) (tools.Tool, error) {
+func NewMCPTool(tool mcp.Tool, session *mcp.ClientSession) (tools.Tool, error) {
 	def, err := mcpToolDefinition(tool)
 	if err != nil {
 		return nil, fmt.Errorf("create adapter for mcp tool %s: %w", tool.Name, err)
@@ -22,7 +20,7 @@ func NewMCPTool(tool mcp.Tool, client client.MCPClient) (tools.Tool, error) {
 
 	return &MCPToolAdapter{
 		tool:       tool,
-		client:     client,
+		session:    session,
 		definition: def,
 	}, nil
 }
@@ -37,7 +35,7 @@ func mcpToolDefinition(tool mcp.Tool) (llms.FunctionDefinition, error) {
 
 type MCPToolAdapter struct {
 	tool       mcp.Tool
-	client     client.MCPClient
+	session    *mcp.ClientSession
 	definition llms.FunctionDefinition
 }
 
@@ -54,11 +52,9 @@ func (t *MCPToolAdapter) Call(ctx context.Context, args string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
 	}
-	result, err := t.client.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      t.tool.Name,
-			Arguments: argObj,
-		},
+	result, err := t.session.CallTool(ctx, &mcp.CallToolParams{
+		Name:      t.tool.Name,
+		Arguments: argObj,
 	})
 	if err != nil {
 		return "", err
@@ -75,14 +71,15 @@ func (t *MCPToolAdapter) Call(ctx context.Context, args string) (string, error) 
 }
 
 func (t *MCPToolAdapter) convertArgs(args string) (any, error) {
-	argsSchema, err := argumentsSchema(t.definition.Parameters)
-	if err != nil {
-		return nil, err
+	argsSchema, ok := t.definition.Parameters.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("unexpected paramter schema of type %T", t.definition.Parameters)
 	}
-	switch argsSchema.Type {
+	typeName := argsSchema["type"]
+	switch typeName {
 	case "object":
 		var m map[string]any
-		err = json.Unmarshal([]byte(args), &m)
+		err := json.Unmarshal([]byte(args), &m)
 		if err != nil {
 			return nil, err
 		}
@@ -94,22 +91,15 @@ func (t *MCPToolAdapter) convertArgs(args string) (any, error) {
 	case "number":
 		return strconv.ParseFloat(args, 64)
 	default:
-		return nil, errors.New("unsupported argument type")
+		return nil, fmt.Errorf("unsupported argument type %q", typeName)
 	}
-}
-
-func argumentsSchema(schema any) (mcp.ToolInputSchema, error) {
-	if s, ok := schema.(mcp.ToolInputSchema); ok {
-		return s, nil
-	}
-	return mcp.ToolInputSchema{}, fmt.Errorf("unexpected input schema of type %T", schema)
 }
 
 func textContentToString(content []mcp.Content) (string, error) {
 	msg := make([]string, 0, 1)
 	for _, c := range content {
 		switch t := c.(type) {
-		case mcp.TextContent:
+		case *mcp.TextContent:
 			msg = append(msg, t.Text)
 		default:
 			// TODO: also support other content types

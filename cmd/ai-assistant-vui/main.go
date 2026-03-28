@@ -12,6 +12,7 @@ import (
 	"github.com/gordonklaus/portaudio"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/audio"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/cli"
+	"github.com/mgoltzsche/ai-assistant-vui/internal/tools/mcp"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vad"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/vui"
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
@@ -92,7 +93,12 @@ func runAudioPipeline(ctx context.Context, cfg config.Configuration) error {
 
 	wavAudioInput := audio.AudioBuffersToRiffWavs(audioInput)
 
-	playbackRequests, conversation, err := vui.AudioPipeline(ctx, cfg, wavAudioInput)
+	mcpServers, err := mcp.NewServers(ctx, cfg.MCPServers)
+	if err != nil {
+		return err
+	}
+
+	playbackRequests, conversation, err := vui.AudioPipeline(ctx, cfg, mcpServers, wavAudioInput)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-ARG ONNXRUNTIME_VERSION=1.23.2
+ARG ONNXRUNTIME_VERSION=1.24.4
 
 # Alpine build doesn't work since execinfo.h is not available on alpine/musl libc and due to some other issue
 # Though, in the future there might be an alpine package since one is already being built in the edge version.
@@ -24,7 +24,7 @@ RUN ./dockerfiles/scripts/install_cmake.sh
 RUN ./build.sh --allow_running_as_root --skip_submodule_sync --config Release --build_shared_lib --update --build --parallel --cmake_extra_defines ONNXRUNTIME_VERSION=$(cat ./VERSION_NUMBER)
 
 
-FROM golang:1.24-bookworm AS vui
+FROM golang:1.26-bookworm AS vui
 RUN apt-get update && apt-get upgrade -y
 RUN apt-get install -y portaudio19-dev
 COPY go.mod go.sum /build/
@@ -43,6 +43,9 @@ ENV C_INCLUDE_PATH="/usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include/
 RUN go build -o ai-assistant-vui ./cmd/ai-assistant-vui
 
 
+FROM mgoltzsche/tool-containers-mcp:0.1.0 AS tool-containers
+
+
 FROM debian:12-slim
 RUN set -ex; \
 	apt-get update && apt-get upgrade -y; \
@@ -57,7 +60,9 @@ ARG SILERO_VAD_VERSION=v5.1.2
 RUN set -eux; \
 	mkdir /models; \
 	curl -fsSL https://github.com/snakers4/silero-vad/raw/refs/tags/$SILERO_VAD_VERSION/src/silero_vad/data/silero_vad.onnx > /models/silero_vad.onnx
+COPY --from=tool-containers /tool-containers-mcp /
 COPY --from=vui /build/ai-assistant-vui /
-COPY config.yaml /etc/ai-assistant-vui/config.yaml
+COPY tools.yaml /etc/tool-containers-mcp/
+COPY config.yaml /etc/ai-assistant-vui/
 ENV VUI_LOG_LEVEL=DEBUG
 ENTRYPOINT ["/ai-assistant-vui"]
