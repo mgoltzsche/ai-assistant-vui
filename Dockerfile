@@ -43,7 +43,7 @@ ENV C_INCLUDE_PATH="/usr/local/include/onnxruntime-$ONNXRUNTIME_VERSION/include/
 RUN go build -o ai-assistant-vui ./cmd/ai-assistant-vui
 
 
-FROM mgoltzsche/tool-containers-mcp:0.1.0 AS tool-containers
+FROM mgoltzsche/tool-containers-mcp:0.3.1 AS tool-containers
 
 
 FROM debian:12-slim

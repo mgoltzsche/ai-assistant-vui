@@ -27,7 +27,7 @@ func NewServers(ctx context.Context, mcpServers map[string]config.MCPServer) (Se
 		session, err := mcpClient.Connect(ctx, transport, nil)
 		if err != nil {
 			_ = providers.Close()
-			return nil, err
+			return nil, fmt.Errorf("starting %s MCP server: %w", k, err)
 		}
 		if session.InitializeResult().Capabilities.Tools == nil {
 			_ = session.Close()

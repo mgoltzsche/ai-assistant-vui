@@ -26,12 +26,12 @@ prompt:
 #systemPrompt := "Du bist ein hilfreicher Assistent. Antworte kurz, bündig und auf deutsch!"
 
 mcpServers:
-  dummy:
+  tool-containers:
     command: /tool-containers-mcp
     args:
       - --config=/etc/tool-containers-mcp/tools.yaml
 
 tools:
-- mcpServer: dummy
+- mcpServer: tool-containers
   #allow:
   #- wikipedia

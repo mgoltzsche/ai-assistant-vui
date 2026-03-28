@@ -15,7 +15,7 @@ RUN npm install
 COPY ui /ui
 RUN npm run build
 
-FROM mgoltzsche/tool-containers-mcp:0.1.0 AS tool-containers
+FROM mgoltzsche/tool-containers-mcp:0.3.1 AS tool-containers
 
 FROM alpine:3.23
 ENV VUI_LOG_LEVEL=DEBUG
