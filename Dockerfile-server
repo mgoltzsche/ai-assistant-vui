@@ -17,7 +17,7 @@ COPY ui /ui
 RUN npm run build
 
 
-FROM ghcr.io/mgoltzsche/tool-containers-mcp:0.6.0 AS tool-containers
+FROM ghcr.io/mgoltzsche/tool-containers-mcp:0.7.0 AS tool-containers
 FROM mgoltzsche/podman:5.8.1-minimal AS podman
 
 
