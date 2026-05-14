@@ -120,6 +120,43 @@ tools:
             (printf 'Failed to skip the song: '; yq eval -e '.error.data.message' < /tmp/response || cat /tmp/response; false)
           echo Skipped the current song and started playing the next one.
 
+  query_memory:
+    description: Retrieve related memories.
+    parameters:
+      query:
+        description: The question or topic to retrieve related memories about.
+    container:
+      image: mikefarah/yq:4
+      network: host
+      command: /bin/sh
+      args:
+        - -euc
+        - |
+          REQUEST="$(yq eval -no json '{"question": strenv(PARAM_QUERY)}')"
+          RESPONSE="$(wget -qO - \
+            --header='Content-Type: application/json' \
+            --post-data="$REQUEST" \
+            http://127.0.0.1:8000/query)"
+          echo "$RESPONSE" | yq eval -e '.answer'
+
+  store_memory:
+    description: Save information to be able to rememeber it later.
+    parameters:
+      text:
+        description: The new information to memorize.
+    container:
+      image: mikefarah/yq:4
+      network: host
+      command: /bin/sh
+      args:
+        - -euc
+        - |
+          REQUEST="$(yq eval -no json '{"documents": [strenv(PARAM_TEXT)], "incremental": true}')"
+          wget -qO - \
+            --header='Content-Type: application/json' \
+            --post-data="$REQUEST" \
+            http://127.0.0.1:8000/add_documents
+
 #- name: start_music_playback
 #  description: Call this method to make the music player play music.
 #  parameters:

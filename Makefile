@@ -20,6 +20,12 @@ build-webui: ui/node_modules ## (Re)build the web UI only.
 ui/node_modules:
 	cd ui && npm install
 
+build-vgrag: ## Build vector-graph-rag container.
+	docker build --rm -t vector-graph-rag -f Dockerfile-vgrag .
+
+run-vgrag: build-vgrag ## Run vector-graph-rag container.
+	docker run --rm -it --network=host vector-graph-rag
+
 run-localai: ## Run the LocalAI container.
 	mkdir -p data/models data/backends
 	docker run -ti --rm --network=host --privileged -v "`pwd`/data/models:/models" -v "`pwd`/data/backends:/backends" localai/localai:v4.1.2-gpu-vulkan
