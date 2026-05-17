@@ -10,9 +10,11 @@ RUN go build -o ai-assistant-vui-server -ldflags '-s -w -extldflags "-static"' .
 
 
 FROM node:24-alpine3.23 AS ui
-COPY ui/package.json ui/package-lock.json /ui/
+COPY ui/package.json ui/package-lock.json ui/codegen.js /ui/
 WORKDIR /ui
 RUN npm install
+COPY api /api
+RUN npm run generate
 COPY ui /ui
 RUN npm run build
 

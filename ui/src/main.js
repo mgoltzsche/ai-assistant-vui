@@ -1,8 +1,8 @@
 import './style.css'
 import { MicVAD } from "@ricky0123/vad-web"
-import { wavBlobFromFloat32Array } from './audioconversion.js'
+import { riffWaveFromFloat32Array } from './riffwave.js'
 import { RealTimeAudioPlayer } from './audioplayer.js'
-import { PCMWebsocket } from './pcmwebsocket.js'
+import { PbWebsocket } from './pbwebsocket.js'
 
 try {
   if (!navigator.mediaDevices) {
@@ -10,7 +10,7 @@ try {
   }
 
   const player = new RealTimeAudioPlayer()
-  const websocket = new PCMWebsocket({
+  const websocket = new PbWebsocket({
 	url: `wss://${window.location.host}/channels/default/audio?buffer-ms=50`,
 	player: player
   })
@@ -21,7 +21,7 @@ try {
         method: 'POST',
         body: wavBlobFromFloat32Array(audioSamples, 16000)
       });*/
-      websocket.send(await wavBlobFromFloat32Array(audioSamples, 16000).bytes())
+      websocket.send(riffWaveFromFloat32Array(audioSamples, 16000))
     },
   });
 

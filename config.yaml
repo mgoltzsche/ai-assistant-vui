@@ -5,7 +5,7 @@ vadEnabled: true
 vadModelPath: /models/silero_vad.onnx
 sttModel: whisper-1
 chatModel: qwen3-4b
-
+#ttsModel: vibevoice-cpp
 ttsModel: voice-en-us-amy-low
 temperature: 0.7
 wakeWord: Computer

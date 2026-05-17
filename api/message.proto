@@ -1,0 +1,16 @@
+edition = "2024";
+
+package chat;
+
+option go_package = "github.com/mgoltzsche/ai-assistant-vui/internal/generated/api/chat";
+
+enum Role {
+  USER      = 0;
+  ASSISTANT = 1;
+}
+
+message Message {
+  Role role           = 1;
+  string text_message = 2;
+  bytes audio_message = 3;
+}
