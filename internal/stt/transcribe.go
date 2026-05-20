@@ -13,7 +13,7 @@ type Transcription = model.Message
 type AudioMessage = model.AudioMessage
 
 type Service interface {
-	Transcribe(ctx context.Context, wavData []byte) (Transcription, error)
+	Transcribe(ctx context.Context, wavData []byte) (Response, error)
 }
 
 type Transcriber struct {
@@ -33,11 +33,11 @@ func (t *Transcriber) Transcribe(ctx context.Context, input <-chan AudioMessage)
 				slog.Error(fmt.Sprintf("transcribe: %s", err))
 				continue
 			}
-
-			result.Text = strings.TrimSuffix(result.Text, "[BLANK_AUDIO]")
-
-			if strings.TrimSpace(result.Text) != "" {
-				ch <- result
+			txt := strings.TrimSuffix(result.Text, "[BLANK_AUDIO]")
+			if strings.TrimSpace(txt) != "" {
+				ch <- model.Message{
+					Text: txt,
+				}
 			}
 		}
 	}()

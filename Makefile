@@ -51,6 +51,7 @@ clean: ## Delete build artifacts from repo dir.
 	rm -rf internal/generated/api
 	rm -rf ui/dist || true
 	rm -rf ui/node_modules || true
+	rm -rf ui/src/gen
 
 ##@ Development
 

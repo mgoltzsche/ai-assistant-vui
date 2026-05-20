@@ -28,7 +28,7 @@ func WebsocketHandler(c *channel.Channel) http.Handler {
 		defer ws.CloseNow()
 
 		go func() {
-			err := readWebsocketMessage(req.Context(), ws, c)
+			err := readWebsocketMessages(req.Context(), ws, c)
 			if err != nil {
 				slog.Error("failed to read websocket message", "err", err)
 				return
@@ -42,7 +42,7 @@ func WebsocketHandler(c *channel.Channel) http.Handler {
 	})
 }
 
-func readWebsocketMessage(ctx context.Context, ws *websocket.Conn, out channel.Publisher) error {
+func readWebsocketMessages(ctx context.Context, ws *websocket.Conn, out channel.Publisher) error {
 	for {
 		ws.SetReadLimit(-1)
 		msgType, reader, err := ws.Reader(ctx)
@@ -65,10 +65,13 @@ func readWebsocketMessage(ctx context.Context, ws *websocket.Conn, out channel.P
 			return err
 		}
 
-		slog.Info("received pb message", "len", len(pbMsg.GetAudioMessage()), "text", pbMsg.GetTextMessage())
+		slog.Debug("received websocket message", "audio", len(pbMsg.GetAudioMessage()), "text", pbMsg.GetTextMessage())
 
 		out.Publish(model.AudioMessage{
 			WaveData: pbMsg.GetAudioMessage(),
+			Message: model.Message{
+				Text: pbMsg.GetTextMessage(),
+			},
 		})
 	}
 }
@@ -87,7 +90,12 @@ func streamAgentEvents(ctx context.Context, c channel.Subscriber, ws *websocket.
 			}
 
 			pbMsg := chat.Message{}
-			pbMsg.SetRole(chat.Role_ASSISTANT)
+			switch msg.Role {
+			case model.RoleUser:
+				pbMsg.SetRole(chat.Role_USER)
+			case model.RoleAssistant:
+				pbMsg.SetRole(chat.Role_ASSISTANT)
+			}
 			if msg.Text != "" {
 				pbMsg.SetTextMessage(msg.Text)
 			}

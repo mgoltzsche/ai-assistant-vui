@@ -7,6 +7,18 @@ const (
 	MessageTypeEnd   MessageType = "end"
 )
 
+type Role string
+
+const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+type Event struct {
+	Role Role
+	AudioMessage
+}
+
 type Message struct {
 	Type       MessageType
 	RequestNum int64

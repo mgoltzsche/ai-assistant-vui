@@ -16,13 +16,14 @@ import (
 	"github.com/mgoltzsche/ai-assistant-vui/pkg/config"
 )
 
+type Event = model.Event
 type AudioMessage = model.AudioMessage
-type Subscriber = pubsub.Subscriber[AudioMessage]
+type Subscriber = pubsub.Subscriber[Event]
 type Publisher = pubsub.Publisher[AudioMessage]
 
 type Channel struct {
 	input  chan<- AudioMessage
-	output *pubsub.PubSub[AudioMessage]
+	output *pubsub.PubSub[Event]
 	cancel context.CancelFunc
 }
 
@@ -31,7 +32,7 @@ func newChannel(ctx context.Context, cfg config.Configuration, mcpServers mcp.Se
 	input := make(chan AudioMessage, 5)
 	c := &Channel{
 		input:  input,
-		output: pubsub.New[AudioMessage](),
+		output: pubsub.New[Event](),
 		cancel: cancel,
 	}
 
@@ -49,14 +50,18 @@ func newChannel(ctx context.Context, cfg config.Configuration, mcpServers mcp.Se
 				continue
 			}
 
-			duration, err := audioDuration(m.WaveData)
-			if err != nil {
-				slog.Error(fmt.Sprintf("read audio output duration: %s", err))
-				continue
+			var duration time.Duration
+			if len(m.WaveData) > 0 {
+				var err error
+				duration, err = audioDuration(m.WaveData)
+				if err != nil {
+					slog.Error(fmt.Sprintf("read audio output duration: %s", err))
+					continue
+				}
 			}
 
-			if m.UserOnly || conversation.AddAIResponse(m.RequestNum, m.Text) {
-				if m.UserOnly {
+			if m.UserOnly || m.Role != model.RoleAssistant || conversation.AddAIResponse(m.RequestNum, m.Text) {
+				if m.UserOnly && m.Role == model.RoleAssistant {
 					slog.Info(fmt.Sprintf("assistant: %s", m.Text))
 				}
 
@@ -79,7 +84,7 @@ func (c *Channel) Publish(msg AudioMessage) {
 	c.input <- msg
 }
 
-func (c *Channel) Subscribe(ctx context.Context) pubsub.Subscription[AudioMessage] {
+func (c *Channel) Subscribe(ctx context.Context) pubsub.Subscription[Event] {
 	return c.output.Subscribe(ctx)
 }
 

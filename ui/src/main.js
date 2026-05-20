@@ -3,6 +3,7 @@ import { MicVAD } from "@ricky0123/vad-web"
 import { riffWaveFromFloat32Array } from './riffwave.js'
 import { RealTimeAudioPlayer } from './audioplayer.js'
 import { PbWebsocket } from './pbwebsocket.js'
+import { setupUI } from './ui.js'
 
 try {
   if (!navigator.mediaDevices) {
@@ -10,20 +11,16 @@ try {
   }
 
   const player = new RealTimeAudioPlayer()
-  const websocket = new PbWebsocket({
-	url: `wss://${window.location.host}/channels/default/audio?buffer-ms=50`,
-	player: player
-  })
+  const websocket = new PbWebsocket(`wss://${window.location.host}/channels/default/audio?buffer-ms=50`)
+
   const myvad = await MicVAD.new({
     onSpeechEnd: async function(audioSamples) {
       console.log("voice detected")
-      /*fetch('/channels/default/audio', {
-        method: 'POST',
-        body: wavBlobFromFloat32Array(audioSamples, 16000)
-      });*/
-      websocket.send(riffWaveFromFloat32Array(audioSamples, 16000))
+      websocket.send({'audioMessage': riffWaveFromFloat32Array(audioSamples, 16000)})
     },
   });
+
+  setupUI(websocket, player);
 
   player.start()
   websocket.start()

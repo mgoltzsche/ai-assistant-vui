@@ -14,56 +14,16 @@ import (
 
 type GeneratedSound = model.AudioMessage
 
-type Request struct {
-	RequestNum int64
-}
-
-type Generator struct {
-	SampleRate int
-	sound      []byte
-}
-
-func (g *Generator) Notify(requests <-chan Request, conv *model.Conversation) (<-chan GeneratedSound, error) {
-	data, err := g.generateSound(500, 300*time.Millisecond)
-	if err != nil {
-		return nil, fmt.Errorf("generate sound: %w", err)
-	}
-
-	ch := make(chan GeneratedSound, 10)
-
-	go func() {
-		defer close(ch)
-
-		for req := range requests {
-			if conv.RequestCounter() > req.RequestNum {
-				// Skip request if outdated (user requested something else)
-				continue
-			}
-
-			ch <- GeneratedSound{
-				Message: model.Message{
-					RequestNum: req.RequestNum,
-					Text:       "(acknowledged)",
-					UserOnly:   true,
-				},
-				WaveData: data,
-			}
-		}
-	}()
-
-	return ch, nil
-}
-
-func (g *Generator) generateSound(frequency float64, duration time.Duration) ([]byte, error) {
-	data := make([]int, int(math.Ceil(float64(duration)*float64(g.SampleRate)/float64(time.Second))))
+func GenerateSound(sampleRate int, frequency float64, duration time.Duration) ([]byte, error) {
+	data := make([]int, int(math.Ceil(float64(duration)*float64(sampleRate)/float64(time.Second))))
 	for i := range data {
-		phase := frequency * float64(i) / float64(g.SampleRate)
+		phase := frequency * float64(i) / float64(sampleRate)
 
 		data[i] = int(math.Sin(2*math.Pi*phase) * 32767)
 	}
 
 	buf := &audio.IntBuffer{
-		Format:         &audio.Format{SampleRate: g.SampleRate, NumChannels: 1},
+		Format:         &audio.Format{SampleRate: sampleRate, NumChannels: 1},
 		Data:           data,
 		SourceBitDepth: 16,
 	}

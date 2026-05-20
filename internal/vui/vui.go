@@ -9,7 +9,6 @@ import (
 
 	"github.com/mgoltzsche/ai-assistant-vui/internal/chat"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
-	"github.com/mgoltzsche/ai-assistant-vui/internal/soundgen"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/stt"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tools/mcp"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/tts"
@@ -18,8 +17,9 @@ import (
 )
 
 type AudioMessage = model.AudioMessage
+type Event = model.Event
 
-func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp.Servers, input <-chan AudioMessage) (<-chan AudioMessage, *model.Conversation, error) {
+func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp.Servers, input <-chan AudioMessage) (<-chan Event, *model.Conversation, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		<-ctx.Done()
@@ -44,7 +44,9 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 			Client: httpClient,
 		},
 	}
-	requester := &chat.Requester{}
+	requester := &chat.Requester{
+		NotificationSampleRate: 16000,
+	}
 	llm := chat.LLM{
 		ServerURL:           cfg.ServerURL,
 		APIKey:              cfg.APIKey,
@@ -91,36 +93,47 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 			Client: httpClient,
 		},
 	}
-	soundGen := &soundgen.Generator{
-		SampleRate: 16000,
-	}
 
-	transcriptions := transcriber.Transcribe(ctx, input)
+	audioInput, textInput := splitChannel(input, func(msg AudioMessage) bool { return len(msg.WaveData) > 0 })
+	transcriptions := transcriber.Transcribe(ctx, audioInput)
 	userRequests := wakewordFilter.FilterByWakeWord(transcriptions)
 	userRequestsConverted := chat.ToAudioMessageStreamWithoutAudioData(userRequests)
-	completionRequests, notifications := requester.AddUserRequestsToConversation(ctx, userRequestsConverted, conversation)
-
+	userRequestsConverted = mergeChannels(userRequestsConverted, textInput)
+	completionRequests, feedbackMessages := requester.AddUserRequestsToConversation(ctx, userRequestsConverted, conversation)
 	responses, err := chatCompleter.Run(ctx, completionRequests, conversation)
 	if err != nil {
 		cancel()
-		for _ = range responses {
-		}
-		return nil, nil, err
-	}
-
-	notificationSounds, err := soundGen.Notify(notifications, conversation)
-	if err != nil {
-		cancel()
-		for _ = range responses {
-		}
-		for _ = range notificationSounds {
-		}
+		readAll(responses)
+		readAll(feedbackMessages)
 		return nil, nil, err
 	}
 
 	responses = chat.ChunksToSentences(responses)
 	speeches := speechGen.GenerateAudio(ctx, responses, conversation)
-	audioOutput := chat.MergeChannels(speeches, notificationSounds)
+	resultEvents := assistantEvents(speeches)
+	events := mergeChannels(feedbackMessages, resultEvents)
 
-	return audioOutput, conversation, nil
+	return events, conversation, nil
+}
+
+func assistantEvents(msgs <-chan AudioMessage) <-chan Event {
+	ch := make(chan Event)
+
+	go func() {
+		defer close(ch)
+
+		for msg := range msgs {
+			ch <- Event{
+				Role:         model.RoleAssistant,
+				AudioMessage: msg,
+			}
+		}
+	}()
+
+	return ch
+}
+
+func readAll[T any](ch <-chan T) {
+	for _ = range ch {
+	}
 }

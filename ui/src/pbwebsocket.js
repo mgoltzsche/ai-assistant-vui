@@ -1,11 +1,15 @@
 import { chat } from "./gen/types.js";
 
 export class PbWebsocket {
-  constructor({ url, player } = {}) {
+  constructor(url) {
     this.url = url;
-    this.player = player;
     this.ws = null;
     this.reconnectDelay = 1000;
+    this._onmessage = (msg) => {}
+  }
+
+  set onmessage(handler) {
+	this._onmessage = handler;
   }
 
   start() {
@@ -22,16 +26,15 @@ export class PbWebsocket {
 
       this.ws = new WebSocket(this.url);
       this.ws.binaryType = 'arraybuffer';
+      this.ws.onmessage = this._onmessage;
+      this.ws.onmessage = (event) => {
+        const msg = chat.Message.decode(new Uint8Array(event.data));
+        console.log('received websocket message:', msg);
+        this._onmessage(msg);
+      };
 
       this.ws.onopen = () => {
         console.log("WebSocket connected");
-      };
-
-      this.ws.onmessage = (event) => {
-        const msg = chat.Message.decode(new Uint8Array(event.data));
-        if (msg.audioMessage) {
-        	  this.player.playRiffWave(msg.audioMessage);
-        }
       };
 
       this.ws.onerror = (err) => {
@@ -54,15 +57,11 @@ export class PbWebsocket {
     setTimeout(() => this.connect(), this.reconnectDelay);
   }
 
-  send(data) {
-    if (!(data instanceof Uint8Array)) {
-      throw new Error("send(buf) expects an ArrayBuffer but got "+data);
-    }
+  send(msg) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const msg = chat.Message.create({'audioMessage': data});
       this.ws.send(chat.Message.encode(msg).finish());
     } else {
-      console.warn("WebSocket is not open. Unable to send PCM data.");
+      console.warn("WebSocket is not open. Unable to send message.");
     }
   }
 
@@ -70,10 +69,6 @@ export class PbWebsocket {
     if (this.ws) {
       this.ws.close();
       this.ws = null;
-    }
-    if (this.player) {
-    	  this.player.stop();
-	  this.player = null;
     }
   }
 }
