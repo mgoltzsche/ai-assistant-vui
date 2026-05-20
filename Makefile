@@ -28,7 +28,7 @@ ui/node_modules:
 
 run-localai: ## Run the LocalAI container.
 	mkdir -p data/models data/backends
-	docker run -ti --rm --network=host --privileged -v "`pwd`/data/models:/models" -v "`pwd`/data/backends:/backends" localai/localai:v4.1.2-gpu-vulkan
+	docker run -ti --rm --network=host --privileged -v "`pwd`/data/models:/models" -v "`pwd`/data/backends:/backends" localai/localai:v4.0.0-gpu-vulkan --address 127.0.0.1:8080
 
 run-vui: build-vui ## Run the command line VUI.
 	docker run --rm --privileged --network=host -v "`pwd`/data/memory:/data/memory" $(CLI_IMAGE) --input-device="$(INPUT_DEVICE)" --output-device="$(OUTPUT_DEVICE)"
