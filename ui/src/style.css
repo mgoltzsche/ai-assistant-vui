@@ -31,15 +31,14 @@ body {
 }
 
 h1 {
-  font-size: 3em;
   line-height: 1.1;
-  margin: 5vh 0;
+  margin: 1em 0;
 }
 
 #app {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 1.5rem;
+  padding: 1vmin;
   text-align: center;
 }
 
@@ -48,25 +47,26 @@ h1 {
 	font-weight: 400;
 }
 
+#header {
+	display: flex;
+	align-items: center;
+	text-align: center;
+	margin: 0 0 2vh 0;
+}
+
 .logo {
-  max-height: 16em;
-  padding: 1.5em;
+  max-height: 2em;
+  margin: 0 0.7em 0 0;
   will-change: filter;
   transition: filter 300ms;
 }
 .logo:hover {
   filter: drop-shadow(0 0 2em #700000aa);
 }
-.logo.vanilla:hover {
-  filter: drop-shadow(0 0 2em #f7df1eaa);
-}
 
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+h1 {
+  font-size: 2em;
+  margin: 0;
 }
 
 button {
@@ -88,6 +88,40 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+#chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: 1vh;
+  max-height: 65vh;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+#chat-history .message {
+  max-width: 70%;
+  padding: 0.7em 1em;
+  border-radius: 18px;
+  word-wrap: break-word;
+}
+
+#chat-history .message.user {
+  align-self: flex-end;
+  background: #2c6bed;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+#chat-history .message.assistant {
+  align-self: flex-start;
+  background: #dddddd;
+  color: #000;
+  border-bottom-left-radius: 4px;
+}
+
+#input-area {
+	margin: 1vh 0 0 0;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;
@@ -98,5 +132,20 @@ button:focus-visible {
   }
   button {
     background-color: #f9f9f9;
+  }
+}
+
+@media (min-width: 768px) {
+  #header {
+    display: block;
+  }
+  .logo {
+	display: block;
+    max-height: 20vh;
+    margin: 0 auto;
+    margin-bottom: 2vh;
+  }
+  #chat-history {
+    max-height: 60vh;
   }
 }

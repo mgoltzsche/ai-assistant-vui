@@ -7,8 +7,9 @@ const sendButton = document.getElementById('send-button');
 const chatHistoryElement = document.getElementById('chat-history');
 
 function addMessageToChat(role, text) {
+  if (!text.trim()) return;
   const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${role}`;
+  messageDiv.className = `message ${role.toLowerCase()}`;
   messageDiv.innerHTML = `<strong>${role}:</strong> ${text}`;
   chatHistoryElement.appendChild(messageDiv);
   chatHistoryElement.scrollTop = chatHistoryElement.scrollHeight;
@@ -31,6 +32,9 @@ function setupUIEventHandlers(websocket) {
       sendTextMessage(messageInput.value, websocket);
     }
   });
+  addEventListener("resize", () => {
+    chatHistoryElement.scrollTop = chatHistoryElement.scrollHeight;
+  })
 }
 
 function setupWebsocketMessageHandling(websocket, player) {
