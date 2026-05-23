@@ -55,6 +55,7 @@ func (r *Requester) AddUserRequestsToConversation(ctx context.Context, requests 
 					Message: model.Message{
 						RequestNum: reqNum,
 						Text:       "(acknowledged)",
+						UserOnly:   true,
 					},
 					WaveData: notificationSound,
 				},
