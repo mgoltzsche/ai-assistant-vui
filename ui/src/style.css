@@ -95,6 +95,7 @@ button:focus-visible {
   max-height: 65vh;
   box-sizing: border-box;
   overflow: auto;
+  padding: 0 1em;
 }
 
 #chat-history .message {
