@@ -198,7 +198,9 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools
 		llms.WithMaxTokens(c.MaxTokens),
 		llms.WithPromptCaching(true),
 		llms.WithThinkingMode(llms.ThinkingModeNone),
-		llms.WithMetadata(map[string]any{}),
+		llms.WithMetadata(map[string]any{
+			"enable_thinking": "false",
+		}),
 	)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
