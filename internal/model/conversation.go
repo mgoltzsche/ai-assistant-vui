@@ -8,18 +8,29 @@ import (
 	"sync"
 
 	"github.com/tmc/langchaingo/llms"
+	"gopkg.in/yaml.v3"
 )
+
+type StructuredConversationState struct {
+	Topics []string `json:"topics"`
+	Facts  []string `json:"facts"`
+	//Conclusions []string `json:"conclusions"`
+	//PendingDiscussions []string `json:"pendingDiscussions"`
+}
+
+type ConversationState struct {
+	RequestNum int64
+	Messages   []llms.MessageContent
+	StructuredConversationState
+}
 
 type Conversation struct {
 	requestCounter int64
 	cancelFuncs    []context.CancelFunc
-	messages       []conversationMessage
-	mutex          sync.Mutex
-}
-
-type conversationMessage struct {
-	RequestNum int64
-	llms.MessageContent
+	// TODO: move systemPrompt out of the conversation
+	systemPrompt string
+	state        ConversationState
+	mutex        sync.Mutex
 }
 
 func FormatMessage(m llms.MessageContent) string {
@@ -48,15 +59,22 @@ func formatMessageParts(parts []llms.ContentPart) string {
 }
 
 func NewConversation(systemPrompt string, reqNum int64) *Conversation {
-	messages := make([]conversationMessage, 1, 100)
-	messages[0] = conversationMessage{
-		RequestNum:     reqNum,
-		MessageContent: llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt),
-	}
+	messages := make([]llms.MessageContent, 0, 50)
 
 	return &Conversation{
-		messages:       messages,
-		requestCounter: reqNum,
+		systemPrompt: systemPrompt,
+		state: ConversationState{
+			RequestNum: reqNum,
+			Messages:   messages,
+		},
+	}
+}
+
+// WithState returns a Conversation copy with the given state.
+func (c *Conversation) WithState(state ConversationState) *Conversation {
+	return &Conversation{
+		systemPrompt: c.systemPrompt,
+		state:        state,
 	}
 }
 
@@ -72,17 +90,32 @@ func (c *Conversation) RequestCounter() int64 {
 }
 
 func (c *Conversation) SystemPrompt() string {
-	return formatMessageParts(c.messages[0].MessageContent.Parts)
+	return c.systemPrompt
 }
 
 func (c *Conversation) SetSystemPrompt(prompt string) {
+	c.systemPrompt = prompt
+}
+
+func (c *Conversation) State() ConversationState {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	c.messages[0] = conversationMessage{
-		RequestNum:     c.requestCounter,
-		MessageContent: llms.TextParts(llms.ChatMessageTypeSystem, prompt),
+	return c.state
+}
+
+func (c *Conversation) SetState(state ConversationState) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	if c.state.RequestNum != state.RequestNum {
+		slog.Debug("ignoring outdated conversation state")
+		return
 	}
+
+	slog.Debug("update conversation state", "state", state)
+
+	c.state = state
 }
 
 func (c *Conversation) AddUserRequest(msgContent llms.ContentPart) int64 {
@@ -97,19 +130,15 @@ func (c *Conversation) AddUserRequest(msgContent llms.ContentPart) int64 {
 
 	c.cancelFuncs = nil
 
-	cmsg := conversationMessage{
-		RequestNum: c.requestCounter,
-		MessageContent: llms.MessageContent{
-			Role:  llms.ChatMessageTypeHuman,
-			Parts: []llms.ContentPart{msgContent},
-		},
+	msg := llms.MessageContent{
+		Role:  llms.ChatMessageTypeHuman,
+		Parts: []llms.ContentPart{msgContent},
 	}
-	msgStr := formatMessageParts(cmsg.MessageContent.Parts)
+	msgStr := formatMessageParts(msg.Parts)
 
 	slog.Info(fmt.Sprintf("user request: %s", strings.TrimSpace(msgStr)))
 
-	c.dropPreviousMessages()
-	c.addMessage(cmsg)
+	c.addMessage(c.requestCounter, msg)
 
 	return c.requestCounter
 }
@@ -122,10 +151,7 @@ func (c *Conversation) AddAIResponse(requestNum int64, msg string) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	if c.addMessage(conversationMessage{
-		RequestNum:     requestNum,
-		MessageContent: llms.TextParts(llms.ChatMessageTypeAI, msg),
-	}) {
+	if c.addMessage(requestNum, llms.TextParts(llms.ChatMessageTypeAI, msg)) {
 		slog.Info(fmt.Sprintf("assistant: %s", strings.TrimSpace(msg)))
 		return true
 	}
@@ -142,81 +168,65 @@ func (c *Conversation) AddToolCallResponse(requestNum int64, call llms.ToolCall,
 		return
 	}
 
-	c.messages = append(c.messages,
-		conversationMessage{
-			RequestNum: requestNum,
-			MessageContent: llms.MessageContent{
-				Role:  llms.ChatMessageTypeAI,
-				Parts: []llms.ContentPart{call},
-			},
+	c.state.Messages = append(c.state.Messages,
+		llms.MessageContent{
+			Role:  llms.ChatMessageTypeAI,
+			Parts: []llms.ContentPart{call},
 		},
-		conversationMessage{
-			RequestNum: requestNum,
-			MessageContent: llms.MessageContent{
-				Role: llms.ChatMessageTypeTool,
-				Parts: []llms.ContentPart{llms.ToolCallResponse{
-					ToolCallID: call.ID,
-					Name:       call.FunctionCall.Name,
-					Content:    result,
-				}},
-			},
+		llms.MessageContent{
+			Role: llms.ChatMessageTypeTool,
+			Parts: []llms.ContentPart{llms.ToolCallResponse{
+				ToolCallID: call.ID,
+				Name:       call.FunctionCall.Name,
+				Content:    result,
+			}},
 		})
 }
 
-func (c *Conversation) addMessage(msg conversationMessage) bool {
-	if c.requestCounter > msg.RequestNum {
+func (c *Conversation) addMessage(requestNum int64, msg llms.MessageContent) bool {
+	if c.requestCounter > requestNum {
 		// ignore response from an outdated request
 		return false
 	}
 
-	messages := c.messages
+	messages := c.state.Messages
 
 	if len(messages) > 0 && messages[len(messages)-1].Role == msg.Role {
 		// TODO: add whitespace
 		messages[len(messages)-1].Parts = append(messages[len(messages)-1].Parts, msg.Parts...)
-		messages[len(messages)-1].RequestNum = msg.RequestNum
 	} else {
 		messages = append(messages, msg)
 	}
 
-	c.messages = messages
+	c.state.Messages = messages
 
 	return true
 }
 
-func (c *Conversation) dropPreviousMessages() {
-	filtered := make([]conversationMessage, 0, len(c.messages)+1)
-
-	for i, msg := range c.messages {
-		if i == 0 || msg.RequestNum == c.requestCounter {
-			filtered = append(filtered, msg)
+func toolCallID(msg llms.MessageContent) string {
+	for _, part := range msg.Parts {
+		if call, ok := part.(llms.ToolCall); ok && call.Type == "function" {
+			return call.ID
 		}
 	}
-
-	c.messages = filtered
+	return ""
 }
 
 func (c *Conversation) Messages() []llms.MessageContent {
-	msgs := c.messages
-	msgContents := make([]llms.MessageContent, len(msgs))
+	msgs := c.state.Messages
+	msgContents := make([]llms.MessageContent, len(msgs)+1)
+
+	stateYAML, err := yaml.Marshal(c.state)
+	if err != nil {
+		panic(err)
+	}
+
+	systemPrompt := fmt.Sprintf("%s\n%s", c.systemPrompt, stateYAML)
+	msgContents[0] = llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt)
 
 	for i, msg := range msgs {
-		msgContents[i] = msg.MessageContent
+		msgContents[i+1] = msg
 	}
 
 	return msgContents
-}
-
-func (c *Conversation) RequestMessages() []llms.MessageContent {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	msgs := make([]llms.MessageContent, 0, 10)
-	for _, msg := range c.messages {
-		if msg.RequestNum == c.requestCounter {
-			msgs = append(msgs, msg.MessageContent)
-		}
-	}
-
-	return msgs
 }

@@ -27,18 +27,23 @@ func IsResponseDelegated(err error) bool {
 	return errors.As(err, &e)
 }
 
+type LLMConfig struct {
+	ServerURL  string
+	APIKey     string
+	Model      string
+	HTTPClient HTTPDoer
+}
+
 type LLM struct {
-	ServerURL           string
-	APIKey              string
-	Model               string
+	LLMConfig
+
 	Temperature         float64
 	FrequencyPenalty    float64
 	MaxTokens           int
 	StripResponsePrefix string
 	MaxTurns            int
-	HTTPClient          HTTPDoer
 
-	llm *openai.LLM
+	llm llms.LLM
 }
 
 type HTTPDoer interface {
@@ -107,11 +112,67 @@ func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []tools.Tool,
 	}
 }
 
+func (c *LLM) WarmupChatCompletion(ctx context.Context, reqNum int64, toolDefs []tools.Tool, conv *model.Conversation) error {
+	// TODO: differentiate logs of warmup requests from real ones somehow.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	ignore := make(chan ResponseChunk)
+	defer close(ignore)
+	go func() {
+		for _ = range ignore {
+			// cancel after first token since we just want to populate the cache for the new message history
+			cancel()
+		}
+	}()
+
+	fns := tools.NewCallLoopPreventingProvider(toolDefs)
+	_, err := c.generateContent(ctx, reqNum, fns, conv, ignore)
+
+	return err
+}
+
 func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	if conv.RequestCounter() > reqNum {
 		return nil // skip outdated request (user requested something else)
 	}
 
+	toolCalls, err := c.generateContent(ctx, reqNum, fns, conv, ch)
+	if err != nil {
+		return err
+	}
+
+	if len(toolCalls) > 0 {
+		toolCalls = mergeToolCalls(toolCalls)
+
+		for _, call := range toolCalls {
+			if call.Type != "function" || call.FunctionCall == nil {
+				slog.Warn(fmt.Sprintf("ignoring unsupported tool call: %#v", call))
+				continue
+			}
+
+			if conv.RequestCounter() > reqNum {
+				return nil // skip outdated request (user requested something else)
+			}
+
+			err := handleToolCall(ctx, call.ToolCall(), reqNum, fns, conv, ch)
+			if err != nil {
+				if IsResponseDelegated(err) {
+					// TODO: support using multiple agents/request (one for each task, e.g. change volume AND research sth)
+					return nil // toolified agent answered to the user directly
+				}
+
+				return fmt.Errorf("failed to call tool %q: %w", call.FunctionCall.Name, err)
+			}
+		}
+
+		return &reconcileError{fmt.Errorf("needs reconciliation")}
+	}
+
+	return nil
+}
+
+func (c *LLM) generateContent(ctx context.Context, reqNum int64, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) ([]aiToolCall, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -119,7 +180,7 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools
 
 	functions, err := fns.Tools(ctx)
 	if err != nil {
-		return fmt.Errorf("get available tools: %w", err)
+		return nil, fmt.Errorf("get available tools: %w", err)
 	}
 
 	llmFunctions := make([]llms.FunctionDefinition, len(functions))
@@ -127,11 +188,10 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools
 		llmFunctions[i] = f.Definition()
 	}
 
+	toolCalls := make([]aiToolCall, 0, 10)
 	messages := conv.Messages()
 
 	printMessages(messages)
-
-	var toolCalls []aiToolCall
 
 	streamingFunc := func(_ context.Context, chunk []byte) error {
 		c.emitResponseChunk(string(chunk), reqNum, ch)
@@ -191,7 +251,7 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools
 	_, err = c.llm.GenerateContent(ctx,
 		messages,
 		llms.WithStreamingFunc(streamingFuncWrapper),
-		//llms.WithTools(tools),
+		//llms.WithTools(toTools(llmFunctions)),
 		llms.WithFunctions(llmFunctions),
 		llms.WithTemperature(c.Temperature),
 		llms.WithFrequencyPenalty(c.FrequencyPenalty),
@@ -202,43 +262,31 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools
 			"enable_thinking": "false",
 		}),
 	)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
 
-		return err
+	if errors.Is(err, context.Canceled) {
+		return toolCalls, nil
 	}
 
-	if len(toolCalls) > 0 {
-		toolCalls = mergeToolCalls(toolCalls)
-
-		for _, call := range toolCalls {
-			if call.Type != "function" || call.FunctionCall == nil {
-				slog.Warn(fmt.Sprintf("ignoring unsupported tool call: %#v", call))
-				continue
-			}
-
-			if conv.RequestCounter() > reqNum {
-				return nil // skip outdated request (user requested something else)
-			}
-
-			err := handleToolCall(ctx, call.ToolCall(), reqNum, fns, conv, ch)
-			if err != nil {
-				if IsResponseDelegated(err) {
-					// TODO: support using multiple agents/request (one for each task, e.g. change volume AND research sth)
-					return nil // toolified agent answered to the user directly
-				}
-
-				return fmt.Errorf("failed to call tool %q: %w", call.FunctionCall.Name, err)
-			}
-		}
-
-		return &reconcileError{fmt.Errorf("needs reconciliation")}
-	}
-
-	return nil
+	return toolCalls, err
 }
+
+/*func toTools(functions []llms.FunctionDefinition) []llms.Tool {
+	if len(functions) == 0 {
+		return nil
+	}
+
+	tools := make([]llms.Tool, len(functions))
+
+	for i, fn := range functions {
+		fun := fn
+		tools[i] = llms.Tool{
+			Type:     "function",
+			Function: &fun,
+		}
+	}
+
+	return tools
+}*/
 
 func (c *LLM) emitResponseChunk(chunk string, reqNum int64, ch chan<- ResponseChunk) {
 	ch <- ResponseChunk{

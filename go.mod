@@ -7,10 +7,16 @@ ignore (
 	./ui
 )
 
+// Downgrade jsonschema-go since newer versions generate type=[null, array] for slice fields.
+// Newer versions are not compatible since the OpenAI client struct requires type to be a string.
+// See https://github.com/google/jsonschema-go/issues/48
+replace github.com/google/jsonschema-go => github.com/google/jsonschema-go v0.3.0
+
 require (
 	github.com/coder/websocket v1.8.13
 	github.com/go-audio/audio v1.0.0
 	github.com/go-audio/wav v1.1.0
+	github.com/google/jsonschema-go v0.4.2
 	github.com/gordonklaus/portaudio v0.0.0-20250206071425-98a94950218b
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/orcaman/writerseeker v0.0.0-20200621085525-1d3f536ff85e
@@ -25,7 +31,6 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/go-audio/riff v1.0.0 // indirect
-	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect

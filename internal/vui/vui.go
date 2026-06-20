@@ -47,16 +47,19 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 	requester := &chat.Requester{
 		NotificationSampleRate: 16000,
 	}
+	llmConfig := chat.LLMConfig{
+		ServerURL:  cfg.ServerURL,
+		APIKey:     cfg.APIKey,
+		Model:      cfg.ChatModel,
+		HTTPClient: httpClient,
+	}
 	llm := chat.LLM{
-		ServerURL:           cfg.ServerURL,
-		APIKey:              cfg.APIKey,
-		Model:               cfg.ChatModel,
+		LLMConfig:           llmConfig,
 		Temperature:         cfg.Temperature,
 		FrequencyPenalty:    1.5,
 		MaxTokens:           0,
 		StripResponsePrefix: fmt.Sprintf("%s:", wakewordFilter.WakeWord),
 		MaxTurns:            5,
-		HTTPClient:          httpClient,
 	}
 	agents := make([]chat.Agent, len(cfg.Agents))
 	for i, a := range cfg.Agents {
@@ -75,7 +78,10 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 	}
 
 	chatCompleter := &chat.Completer{
-		LLM:         llm,
+		LLM: llm,
+		Compaction: &chat.ConversationCompaction{
+			LLMConfig: llmConfig,
+		},
 		Tools:       tools,
 		IntroPrompt: renderPromptTemplate(cfg.IntroPrompt, cfg.WakeWord),
 		Agents:      agents,

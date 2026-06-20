@@ -17,6 +17,7 @@ type ChatCompletionRequest struct {
 
 type Completer struct {
 	LLM         LLM
+	Compaction  *ConversationCompaction
 	IntroPrompt string
 	Tools       tools.ToolProvider
 	Agents      []Agent
@@ -57,7 +58,7 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 		}
 
 		for req := range requests {
-			tools, err := c.Tools.Tools(ctx)
+			toolDefs, err := c.Tools.Tools(ctx)
 			if err != nil {
 				slog.Error("failed to load tools", "err", err)
 
@@ -69,10 +70,10 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 			}
 
 			for _, agent := range c.Agents {
-				tools = append(tools, agent.AsTool(req.RequestNum, ch))
+				toolDefs = append(toolDefs, agent.AsTool(req.RequestNum, ch))
 			}
 
-			err = c.LLM.ChatCompletion(ctx, req.RequestNum, tools, conv, ch)
+			err = c.LLM.ChatCompletion(ctx, req.RequestNum, toolDefs, conv, ch)
 			if err != nil {
 				slog.Error("chat completion failed", "err", err)
 
@@ -88,6 +89,13 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 			ch <- ResponseChunk{
 				Type:       model.MessageTypeEnd,
 				RequestNum: req.RequestNum,
+			}
+
+			err = c.Compaction.RunCompaction(ctx, conv, func(ctx context.Context, warmupConv *model.Conversation) error {
+				return c.LLM.WarmupChatCompletion(ctx, req.RequestNum, toolDefs, conv)
+			})
+			if err != nil {
+				slog.Error("conversation compaction failed", "err", err)
 			}
 		}
 	}()
