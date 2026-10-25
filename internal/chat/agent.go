@@ -24,7 +24,6 @@ func (a *Agent) Definition() llms.FunctionDefinition {
 	return llms.FunctionDefinition{
 		Name:        a.Name,
 		Description: a.Description,
-		Strict:      true,
 		Parameters: jsonschema.Definition{
 			Type: "object",
 			Properties: map[string]jsonschema.Definition{
@@ -76,7 +75,6 @@ func (a *AgentTool) Definition() llms.FunctionDefinition {
 	return llms.FunctionDefinition{
 		Name:        a.Name,
 		Description: a.Description,
-		Strict:      true,
 		Parameters: jsonschema.Definition{
 			Type: "object",
 			Properties: map[string]jsonschema.Definition{

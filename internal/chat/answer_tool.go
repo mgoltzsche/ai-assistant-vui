@@ -20,7 +20,6 @@ func (f *answerTool) Definition() llms.FunctionDefinition {
 	return llms.FunctionDefinition{
 		Name:        "answer",
 		Description: "Call this function to answer the user request finally, once you have all information.",
-		Strict:      true,
 		Parameters: jsonschema.Definition{
 			Type: "object",
 			Properties: map[string]jsonschema.Definition{
