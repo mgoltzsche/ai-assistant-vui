@@ -35,6 +35,7 @@ func main() {
 	flag.StringVar(&cfg.VADModelPath, "vad-model", cfg.VADModelPath, "path to the VAD model")
 	flag.StringVar(&cfg.STTModel, "stt-model", cfg.STTModel, "name of the STT model to use")
 	flag.StringVar(&cfg.TTSModel, "tts-model", cfg.TTSModel, "name of the TTS model to use")
+	flag.StringVar(&cfg.TTSVoice, "tts-voice", cfg.TTSVoice, "voice to use for TTS (e.g. speaker name or reference audio path depending on model)")
 	flag.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "name of the chat model to use")
 	flag.Float64Var(&cfg.Temperature, "temperature", cfg.Temperature, "temperature parameter for the chat LLM")
 	flag.StringVar(&cfg.WakeWord, "wake-word", cfg.WakeWord, "word used to address the assistent (needs to be recognized by whisper)")

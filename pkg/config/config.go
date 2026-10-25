@@ -16,6 +16,7 @@ type Configuration struct {
 	VADModelPath string               `json:"vadModelPath,omitempty"`
 	STTModel     string               `json:"sttModel,omitempty"`
 	TTSModel     string               `json:"ttsModel,omitempty"`
+	TTSVoice     string               `json:"ttsVoice,omitempty"`
 	ChatModel    string               `json:"chatModel,omitempty"`
 	Temperature  float64              `json:"temperature,omitempty"`
 	WakeWord     string               `json:"wakeWord,omitempty"`

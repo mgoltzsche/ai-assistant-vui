@@ -6,8 +6,10 @@ vadModelPath: /models/silero_vad.onnx
 sttModel: whisper-1
 chatModel: qwen3-4b
 #ttsModel: vibevoice-cpp
-ttsModel: voice-en-us-amy-low
-#ttsModel: qwen3-tts-cpp
+#ttsModel: voice-en-us-amy-low
+ttsModel: qwen3-tts-cpp-customvoice
+# voices for qwen3-tts-cpp-customvoice: serena, vivian, uncle_fu, ryan, aiden, ono_anna, sohee, eric, dylan
+ttsVoice: serena
 temperature: 0.7
 wakeWord: Computer
 

@@ -90,6 +90,7 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 		Service: &tts.Client{
 			URL:    cfg.ServerURL,
 			Model:  cfg.TTSModel,
+			Voice:  cfg.TTSVoice,
 			Client: httpClient,
 		},
 	}

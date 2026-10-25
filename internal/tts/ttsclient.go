@@ -12,6 +12,7 @@ import (
 type Client struct {
 	URL    string
 	Model  string
+	Voice  string
 	Client *http.Client
 	APIKey string
 }
@@ -20,6 +21,9 @@ func (c *Client) GenerateAudio(ctx context.Context, msg string) (io.ReadCloser, 
 	params := map[string]interface{}{
 		"input": msg,
 		"model": c.Model,
+	}
+	if c.Voice != "" {
+		params["voice"] = c.Voice
 	}
 
 	body, err := json.Marshal(params)
