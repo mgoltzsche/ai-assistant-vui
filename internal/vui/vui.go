@@ -27,7 +27,7 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 	}()
 
 	systemPrompt := renderPromptTemplate(strings.Join(cfg.Prompt, "\n"), cfg.WakeWord)
-	conversation := model.NewConversation(1)
+	conversation := model.NewConversation(1, time.Duration(cfg.TopicFadeDuration))
 	tools, err := mcp.ToolProvider(mcpServers, cfg.Tools)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init main tools: %w", err)

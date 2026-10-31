@@ -51,7 +51,7 @@ func (a *Agent) invoke(ctx context.Context, prompt string, reqNum int64, ch chan
 		return err
 	}
 
-	conv := model.NewConversation(reqNum - 1)
+	conv := model.NewConversation(reqNum-1, 0) // Ephemeral agent conversation, topic fading is disabled.
 
 	conv.AddUserRequest(llms.TextPart(prompt))
 

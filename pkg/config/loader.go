@@ -37,5 +37,10 @@ func FromFile(path string) (Configuration, error) {
 		return cfg, fmt.Errorf("read config at %s: %w", path, err)
 	}
 
+	// Defaulting by key presence allows explicit disabling via "topicFadeDuration: 0s".
+	if _, ok := m["topicFadeDuration"]; !ok {
+		cfg.TopicFadeDuration = DefaultTopicFadeDuration
+	}
+
 	return cfg, nil
 }

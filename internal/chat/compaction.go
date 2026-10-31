@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/mgoltzsche/ai-assistant-vui/internal/model"
@@ -17,8 +18,18 @@ import (
 
 var conversationStateSchema = conversationStateJSONSchema()
 
+// conversationStateDelta is the LLM-facing shape of the conversation state:
+// plain strings without timestamps, timestamps are managed in code.
+type conversationStateDelta struct {
+	Topics []string `json:"topics"`
+	Facts  []string `json:"facts"`
+}
+
 type ConversationCompaction struct {
 	LLMConfig
+
+	// Now returns the current time. Defaults to time.Now, override in tests.
+	Now func() time.Time
 
 	llm llms.LLM
 }
@@ -61,7 +72,7 @@ func (c *ConversationCompaction) RunCompaction(ctx context.Context, conv *model.
 		return fmt.Errorf("marshal conversation state: %w", err)
 	}
 
-	systemPrompt := fmt.Sprintf("Extract the contained topics, facts, conclusions and pending discussions from the chat history and add each to the corresponding string list within the given YAML object, if not contained already, and return the whole object with all new entries:\n\n%s", string(b))
+	systemPrompt := fmt.Sprintf("Extract the topics and facts that are actively discussed in the chat history following these instructions.\nOnly include topics and facts which that chat history actively mentions or discusses. Never copy entries from the existing state below unless they are discussed in the chat history.\nWhen an entry refers to the same topic or fact as an existing entry reuse its exact wording.\nExisting state:\n%s", string(b))
 
 	msgs := append(
 		[]llms.MessageContent{llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt)},
@@ -81,14 +92,20 @@ func (c *ConversationCompaction) RunCompaction(ctx context.Context, conv *model.
 		return errors.New("llm returned empty response")
 	}
 
-	newStateDelta := model.StructuredConversationState{}
+	newStateDelta := conversationStateDelta{}
 	err = json.Unmarshal([]byte(resp.Choices[0].Content), &newStateDelta)
 	if err != nil {
 		slog.Debug("unexpected conversation compaction request response", "response", resp.Choices[0].Content)
 		return fmt.Errorf("unmarshal llm response into conversation state: %w", err)
 	}
 
-	state.StructuredConversationState = mergeState(state.StructuredConversationState, newStateDelta)
+	now := time.Now()
+	if c.Now != nil {
+		now = c.Now()
+	}
+
+	state.Topics.Prune(now)
+	state.StructuredConversationState = mergeState(state.StructuredConversationState, newStateDelta, now)
 	// TODO: persist extracted facts into long-term memory (move old state entries into long-term memory)
 	// TODO: remove old facts and topics from state
 
@@ -101,7 +118,7 @@ func (c *ConversationCompaction) RunCompaction(ctx context.Context, conv *model.
 	state.Messages = state.Messages[offset:]
 
 	// Create a new warmup conversation from scratch in order to warm up the cache for the compacted state.
-	warmupConv := model.NewConversation(state.RequestNum)
+	warmupConv := model.NewConversation(state.RequestNum, 0) // The topic fade duration is carried by the state.
 	warmupConv.SetState(state)
 	err = warmup(ctx, warmupConv)
 	if err != nil {
@@ -113,28 +130,31 @@ func (c *ConversationCompaction) RunCompaction(ctx context.Context, conv *model.
 	return nil
 }
 
-func mergeState(s1, s2 model.StructuredConversationState) model.StructuredConversationState {
+func mergeState(s model.StructuredConversationState, d conversationStateDelta, now time.Time) model.StructuredConversationState {
+	s.Topics.Merge(d.Topics, now)
 	return model.StructuredConversationState{
-		Topics: mergeStrings(s1.Topics, s2.Topics),
-		Facts:  mergeStrings(s1.Facts, s2.Facts),
+		Topics: s.Topics,
+		Facts:  mergeStrings(s.Facts, d.Facts),
 	}
 }
 
 func mergeStrings(l1, l2 []string) []string {
 	m := make(map[string]struct{}, len(l1)+len(l2))
 	result := make([]string, 0, len(l1)+len(l2))
-	for _, item := range l1 {
-		if _, seen := m[item]; seen {
-			continue
+	for _, list := range [][]string{l1, l2} {
+		for _, item := range list {
+			if _, seen := m[item]; seen {
+				continue
+			}
+			m[item] = struct{}{}
+			result = append(result, item)
 		}
-		m[item] = struct{}{}
-		result = append(result, item)
 	}
 	return result
 }
 
 func conversationStateJSONSchema() *openai.ResponseFormatJSONSchemaProperty {
-	jsonSchema, err := jsonschema.For[model.StructuredConversationState](&jsonschema.ForOptions{})
+	jsonSchema, err := jsonschema.For[conversationStateDelta](&jsonschema.ForOptions{})
 	if err != nil {
 		panic(fmt.Errorf("generate jsonschema from struct: %w", err))
 	}

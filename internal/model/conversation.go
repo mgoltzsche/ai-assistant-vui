@@ -6,14 +6,15 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tmc/langchaingo/llms"
 	"gopkg.in/yaml.v3"
 )
 
 type StructuredConversationState struct {
-	Topics []string `json:"topics"`
-	Facts  []string `json:"facts"`
+	Topics FadingTopics `json:"topics"`
+	Facts  []string     `json:"facts"`
 	//Conclusions []string `json:"conclusions"`
 	//PendingDiscussions []string `json:"pendingDiscussions"`
 }
@@ -56,13 +57,16 @@ func formatMessageParts(parts []llms.ContentPart) string {
 	return strings.Join(strs, "")
 }
 
-func NewConversation(reqNum int64) *Conversation {
+func NewConversation(reqNum int64, topicFadeDuration time.Duration) *Conversation {
 	messages := make([]llms.MessageContent, 0, 50)
 
 	return &Conversation{
 		state: ConversationState{
 			RequestNum: reqNum,
 			Messages:   messages,
+			StructuredConversationState: StructuredConversationState{
+				Topics: NewFadingTopics(topicFadeDuration),
+			},
 		},
 	}
 }
@@ -198,6 +202,9 @@ func toolCallID(msg llms.MessageContent) string {
 func (c *Conversation) Messages(systemPrompt string) []llms.MessageContent {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
+
+	// Drop topics that faded away since the last compaction, e.g. during a longer pause.
+	c.state.Topics.Prune(time.Now())
 
 	msgs := c.state.Messages
 	msgContents := make([]llms.MessageContent, len(msgs)+1)
