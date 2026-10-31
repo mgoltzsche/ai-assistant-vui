@@ -92,11 +92,10 @@ func (c *ConversationCompaction) RunCompaction(ctx context.Context, conv *model.
 		return errors.New("llm returned empty response")
 	}
 
-	newStateDelta := conversationStateDelta{}
-	err = json.Unmarshal([]byte(resp.Choices[0].Content), &newStateDelta)
+	newStateDelta, err := parseStateDelta(resp.Choices[0].Content)
 	if err != nil {
 		slog.Debug("unexpected conversation compaction request response", "response", resp.Choices[0].Content)
-		return fmt.Errorf("unmarshal llm response into conversation state: %w", err)
+		return fmt.Errorf("parse llm response into conversation state: %w", err)
 	}
 
 	now := time.Now()
@@ -128,6 +127,40 @@ func (c *ConversationCompaction) RunCompaction(ctx context.Context, conv *model.
 	conv.SetState(state)
 
 	return nil
+}
+
+// parseStateDelta extracts the conversation state from the LLM response.
+// Some LLMs stream a plain-text answer before the JSON object even when a
+// JSON response format is requested, so the JSON object is searched for
+// instead of assuming the content is pure JSON.
+func parseStateDelta(content string) (conversationStateDelta, error) {
+	for i, c := range content {
+		if c != '{' {
+			continue
+		}
+		// Decode one JSON value starting at the opening brace,
+		// ignoring any text that follows it.
+		var delta struct {
+			Topics *[]string `json:"topics"`
+			Facts  *[]string `json:"facts"`
+		}
+		err := json.NewDecoder(strings.NewReader(content[i:])).Decode(&delta)
+		if err != nil {
+			continue
+		}
+		if delta.Topics == nil && delta.Facts == nil {
+			continue // not the state object, look for the next one
+		}
+		result := conversationStateDelta{}
+		if delta.Topics != nil {
+			result.Topics = *delta.Topics
+		}
+		if delta.Facts != nil {
+			result.Facts = *delta.Facts
+		}
+		return result, nil
+	}
+	return conversationStateDelta{}, errors.New("no conversation state JSON object found in llm response")
 }
 
 func mergeState(s model.StructuredConversationState, d conversationStateDelta, now time.Time) model.StructuredConversationState {
