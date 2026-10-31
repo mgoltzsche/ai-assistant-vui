@@ -50,7 +50,7 @@ type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []tools.Tool, conv *model.Conversation, ch chan<- ResponseChunk) error {
+func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, systemPrompt string, fn []tools.Tool, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	if c.llm == nil {
 		llm, err := openai.New(
 			openai.WithHTTPClient(c.HTTPClient),
@@ -97,7 +97,7 @@ func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []tools.Tool,
 			fns = tools.NewCallLoopPreventingProvider(nil)
 		}
 
-		err := c.createChatCompletion(ctx, reqNum, fns, conv, ch)
+		err := c.createChatCompletion(ctx, reqNum, systemPrompt, fns, conv, ch)
 		if err == nil {
 			return nil
 		}
@@ -112,7 +112,7 @@ func (c *LLM) ChatCompletion(ctx context.Context, reqNum int64, fn []tools.Tool,
 	}
 }
 
-func (c *LLM) WarmupChatCompletion(ctx context.Context, reqNum int64, toolDefs []tools.Tool, conv *model.Conversation) error {
+func (c *LLM) WarmupChatCompletion(ctx context.Context, reqNum int64, systemPrompt string, toolDefs []tools.Tool, conv *model.Conversation) error {
 	// TODO: differentiate logs of warmup requests from real ones somehow.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -127,17 +127,17 @@ func (c *LLM) WarmupChatCompletion(ctx context.Context, reqNum int64, toolDefs [
 	}()
 
 	fns := tools.NewCallLoopPreventingProvider(toolDefs)
-	_, err := c.generateContent(ctx, reqNum, fns, conv, ignore)
+	_, err := c.generateContent(ctx, reqNum, systemPrompt, fns, conv, ignore)
 
 	return err
 }
 
-func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
+func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, systemPrompt string, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) error {
 	if conv.RequestCounter() > reqNum {
 		return nil // skip outdated request (user requested something else)
 	}
 
-	toolCalls, err := c.generateContent(ctx, reqNum, fns, conv, ch)
+	toolCalls, err := c.generateContent(ctx, reqNum, systemPrompt, fns, conv, ch)
 	if err != nil {
 		return err
 	}
@@ -172,7 +172,7 @@ func (c *LLM) createChatCompletion(ctx context.Context, reqNum int64, fns *tools
 	return nil
 }
 
-func (c *LLM) generateContent(ctx context.Context, reqNum int64, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) ([]aiToolCall, error) {
+func (c *LLM) generateContent(ctx context.Context, reqNum int64, systemPrompt string, fns *tools.CallLoopPreventingProvider, conv *model.Conversation, ch chan<- ResponseChunk) ([]aiToolCall, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -189,7 +189,7 @@ func (c *LLM) generateContent(ctx context.Context, reqNum int64, fns *tools.Call
 	}
 
 	toolCalls := make([]aiToolCall, 0, 10)
-	messages := conv.Messages()
+	messages := conv.Messages(systemPrompt)
 
 	printMessages(messages)
 

@@ -27,7 +27,7 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 	}()
 
 	systemPrompt := renderPromptTemplate(strings.Join(cfg.Prompt, "\n"), cfg.WakeWord)
-	conversation := model.NewConversation(systemPrompt, 1)
+	conversation := model.NewConversation(1)
 	tools, err := mcp.ToolProvider(mcpServers, cfg.Tools)
 	if err != nil {
 		return nil, nil, fmt.Errorf("init main tools: %w", err)
@@ -82,9 +82,10 @@ func AudioPipeline(ctx context.Context, cfg config.Configuration, mcpServers mcp
 		Compaction: &chat.ConversationCompaction{
 			LLMConfig: llmConfig,
 		},
-		Tools:       tools,
-		IntroPrompt: renderPromptTemplate(cfg.IntroPrompt, cfg.WakeWord),
-		Agents:      agents,
+		Tools:        tools,
+		SystemPrompt: systemPrompt,
+		IntroPrompt:  renderPromptTemplate(cfg.IntroPrompt, cfg.WakeWord),
+		Agents:       agents,
 	}
 	/*conversationAgent := &chat.ConversationAgent{
 		Completer: chatCompleter,

@@ -100,8 +100,10 @@ func (c *ConversationCompaction) RunCompaction(ctx context.Context, conv *model.
 	}
 	state.Messages = state.Messages[offset:]
 
-	// TODO: move systemPrompt out of conversation and create a new warmup conversation here from scratch
-	err = warmup(ctx, conv.WithState(state))
+	// Create a new warmup conversation from scratch in order to warm up the cache for the compacted state.
+	warmupConv := model.NewConversation(state.RequestNum)
+	warmupConv.SetState(state)
+	err = warmup(ctx, warmupConv)
 	if err != nil {
 		return fmt.Errorf("warmup: %w", err)
 	}

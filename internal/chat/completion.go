@@ -16,11 +16,12 @@ type ChatCompletionRequest struct {
 }
 
 type Completer struct {
-	LLM         LLM
-	Compaction  *ConversationCompaction
-	IntroPrompt string
-	Tools       tools.ToolProvider
-	Agents      []Agent
+	LLM          LLM
+	Compaction   *ConversationCompaction
+	SystemPrompt string
+	IntroPrompt  string
+	Tools        tools.ToolProvider
+	Agents       []Agent
 }
 
 func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionRequest, conv *model.Conversation) (<-chan ResponseChunk, error) {
@@ -38,12 +39,10 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 			go func() {
 				defer wg.Done()
 
-				origPrompt := conv.SystemPrompt()
-
-				conv.SetSystemPrompt(fmt.Sprintf("%s\n%s", origPrompt, c.IntroPrompt))
+				introPrompt := fmt.Sprintf("%s\n%s", c.SystemPrompt, c.IntroPrompt)
 				conv.AddUserRequest(llms.TextPart("Hi")) // LocalAI 4 requires user message
 
-				err := c.LLM.ChatCompletion(ctx, conv.RequestCounter(), nil, conv, ch)
+				err := c.LLM.ChatCompletion(ctx, conv.RequestCounter(), introPrompt, nil, conv, ch)
 				if err != nil {
 					slog.Error("failed to generate greeting", "err", err)
 				}
@@ -52,8 +51,6 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 					Type:       model.MessageTypeEnd,
 					RequestNum: conv.RequestCounter(),
 				}
-
-				conv.SetSystemPrompt(origPrompt)
 			}()
 		}
 
@@ -73,7 +70,7 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 				toolDefs = append(toolDefs, agent.AsTool(req.RequestNum, ch))
 			}
 
-			err = c.LLM.ChatCompletion(ctx, req.RequestNum, toolDefs, conv, ch)
+			err = c.LLM.ChatCompletion(ctx, req.RequestNum, c.SystemPrompt, toolDefs, conv, ch)
 			if err != nil {
 				slog.Error("chat completion failed", "err", err)
 
@@ -92,7 +89,7 @@ func (c *Completer) Run(ctx context.Context, requests <-chan ChatCompletionReque
 			}
 
 			err = c.Compaction.RunCompaction(ctx, conv, func(ctx context.Context, warmupConv *model.Conversation) error {
-				return c.LLM.WarmupChatCompletion(ctx, req.RequestNum, toolDefs, conv)
+				return c.LLM.WarmupChatCompletion(ctx, req.RequestNum, c.SystemPrompt, toolDefs, warmupConv)
 			})
 			if err != nil {
 				slog.Error("conversation compaction failed", "err", err)

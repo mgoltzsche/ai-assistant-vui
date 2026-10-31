@@ -27,10 +27,8 @@ type ConversationState struct {
 type Conversation struct {
 	requestCounter int64
 	cancelFuncs    []context.CancelFunc
-	// TODO: move systemPrompt out of the conversation
-	systemPrompt string
-	state        ConversationState
-	mutex        sync.Mutex
+	state          ConversationState
+	mutex          sync.Mutex
 }
 
 func FormatMessage(m llms.MessageContent) string {
@@ -58,23 +56,14 @@ func formatMessageParts(parts []llms.ContentPart) string {
 	return strings.Join(strs, "")
 }
 
-func NewConversation(systemPrompt string, reqNum int64) *Conversation {
+func NewConversation(reqNum int64) *Conversation {
 	messages := make([]llms.MessageContent, 0, 50)
 
 	return &Conversation{
-		systemPrompt: systemPrompt,
 		state: ConversationState{
 			RequestNum: reqNum,
 			Messages:   messages,
 		},
-	}
-}
-
-// WithState returns a Conversation copy with the given state.
-func (c *Conversation) WithState(state ConversationState) *Conversation {
-	return &Conversation{
-		systemPrompt: c.systemPrompt,
-		state:        state,
 	}
 }
 
@@ -87,14 +76,6 @@ func (c *Conversation) AddCancelFunc(fn context.CancelFunc) {
 
 func (c *Conversation) RequestCounter() int64 {
 	return c.requestCounter
-}
-
-func (c *Conversation) SystemPrompt() string {
-	return c.systemPrompt
-}
-
-func (c *Conversation) SetSystemPrompt(prompt string) {
-	c.systemPrompt = prompt
 }
 
 func (c *Conversation) State() ConversationState {
@@ -212,7 +193,12 @@ func toolCallID(msg llms.MessageContent) string {
 	return ""
 }
 
-func (c *Conversation) Messages() []llms.MessageContent {
+// Messages returns the message history prefixed with a system message
+// built from the given systemPrompt and the current conversation state.
+func (c *Conversation) Messages(systemPrompt string) []llms.MessageContent {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
 	msgs := c.state.Messages
 	msgContents := make([]llms.MessageContent, len(msgs)+1)
 
@@ -221,8 +207,8 @@ func (c *Conversation) Messages() []llms.MessageContent {
 		panic(err)
 	}
 
-	systemPrompt := fmt.Sprintf("%s\n%s", c.systemPrompt, stateYAML)
-	msgContents[0] = llms.TextParts(llms.ChatMessageTypeSystem, systemPrompt)
+	systemMsg := fmt.Sprintf("%s\n%s", systemPrompt, stateYAML)
+	msgContents[0] = llms.TextParts(llms.ChatMessageTypeSystem, systemMsg)
 
 	for i, msg := range msgs {
 		msgContents[i+1] = msg

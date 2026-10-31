@@ -51,11 +51,11 @@ func (a *Agent) invoke(ctx context.Context, prompt string, reqNum int64, ch chan
 		return err
 	}
 
-	conv := model.NewConversation(a.SystemPrompt, reqNum-1)
+	conv := model.NewConversation(reqNum - 1)
 
 	conv.AddUserRequest(llms.TextPart(prompt))
 
-	err = a.LLM.ChatCompletion(ctx, reqNum, tools, conv, ch)
+	err = a.LLM.ChatCompletion(ctx, reqNum, a.SystemPrompt, tools, conv, ch)
 	if err != nil {
 		return err
 	}
